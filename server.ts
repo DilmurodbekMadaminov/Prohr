@@ -208,6 +208,64 @@ function checkIsAdmin(userId: number): boolean {
 
 const adminState = new Map<number, string>();
 
+// Helper to broadcast a message or text to all registered users safely
+async function broadcastToAllUsers(
+  sendFn: (user_id: number) => Promise<any>
+): Promise<{ total: number; success: number; fail: number }> {
+  const usersSnap = await getDocs(collection(db, 'users'));
+  if (usersSnap.empty) {
+    return { total: 0, success: 0, fail: 0 };
+  }
+
+  const userIds: number[] = [];
+  usersSnap.forEach((docSnap) => {
+    const idNum = Number(docSnap.id);
+    if (idNum && !isNaN(idNum) && idNum > 0) {
+      userIds.push(idNum);
+    }
+  });
+
+  let success = 0;
+  let fail = 0;
+
+  // Process in batches of 20 with 50ms delay to strictly respect Telegram limits (~25 msgs/sec)
+  const batchSize = 20;
+  for (let i = 0; i < userIds.length; i += batchSize) {
+    const batch = userIds.slice(i, i + batchSize);
+    await Promise.all(
+      batch.map(async (user_id) => {
+        let sent = false;
+        // Retry logic for 429 flood wait
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            await sendFn(user_id);
+            sent = true;
+            break;
+          } catch (err: any) {
+            const errorMsg = err?.message || String(err);
+            if (errorMsg.includes("429") || errorMsg.includes("Too Many Requests")) {
+              const retryAfter = err?.parameters?.retry_after ? err.parameters.retry_after * 1000 : 1500;
+              await new Promise((r) => setTimeout(r, retryAfter));
+              continue;
+            }
+            break; // Non-retryable (e.g., bot blocked by user)
+          }
+        }
+        if (sent) {
+          success++;
+        } else {
+          fail++;
+        }
+      })
+    );
+    if (i + batchSize < userIds.length) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+
+  return { total: userIds.length, success, fail };
+}
+
 // Ultra-fast deduplicated non-blocking subscription check with instant caching
 async function checkSubscription(ctx: any): Promise<boolean> {
   const userId = ctx.from?.id;
@@ -326,6 +384,32 @@ function trackBranchClick(userId: number, branchField: string) {
 
 // ================= BOT HANDLERS =================
 if (bot) {
+  // Ensure every user interacting with bot is recorded in Firestore 'users' collection
+  bot.use(async (ctx, next) => {
+    if (ctx.from && ctx.from.id) {
+      const uId = ctx.from.id;
+      (async () => {
+        try {
+          const uRef = doc(db, 'users', String(uId));
+          const uSnap = await getDoc(uRef);
+          if (!uSnap.exists()) {
+            await setDoc(uRef, {
+              hdp: 0,
+              omon: 0,
+              omon_urganch: 0,
+              omon_gurlan: 0,
+              omon_shovot: 0,
+              firstName: ctx.from.first_name || '',
+              username: ctx.from.username || '',
+              createdAt: new Date().toISOString()
+            }, { merge: true });
+          }
+        } catch (e) {}
+      })();
+    }
+    return next();
+  });
+
   bot.start(async (ctx) => {
     const userId = ctx.from.id;
 
@@ -663,28 +747,17 @@ if (bot) {
 
       if (state === "awaiting_broadcast") {
         adminState.delete(userId);
-        ctx.reply("Xabar tarqatish boshlandi. Bu biroz vaqt olishi mumkin...");
-        
-        let usersSnap: any = { docs: [] };
-        try {
-          usersSnap = await getDocs(collection(db, 'users'));
-        } catch(e) {}
-        let successCount = 0;
-        let failCount = 0;
+        ctx.reply("🚀 Xabar barcha foydalanuvchilarga yuborilmoqda, iltimos kuting...");
 
         (async () => {
-          for (const docSnap of usersSnap.docs) {
-            const user_id = Number(docSnap.id);
-            await messageQueue.add(async () => {
-              try {
-                await ctx.copyMessage(user_id);
-                successCount++;
-              } catch (err) {
-                failCount++;
-              }
+          try {
+            const res = await broadcastToAllUsers(async (targetUserId) => {
+              await ctx.copyMessage(targetUserId);
             });
+            await ctx.reply(`✅ Xabar tarqatish yakunlandi!\n\nJami foydalanuvchilar: ${res.total} ta\nYetkazildi: ${res.success} ta\nYetib bormadi (bloklagan): ${res.fail} ta`);
+          } catch (e: any) {
+            await ctx.reply(`❌ Xabar tarqatishda xatolik yuz berdi: ${e.message}`);
           }
-          await ctx.reply(`✅ Xabar tarqatish yakunlandi!\n\nYetkazildi: ${successCount} ta\nXatolik/Bloklaganlar: ${failCount} ta`);
         })();
         return;
       }
@@ -847,52 +920,33 @@ app.post("/api/broadcast", async (req, res) => {
       return res.status(500).json({ error: "Bot token sozlanmagan" });
     }
 
-    const usersSnap = await getDocs(collection(db, 'users'));
-    if (usersSnap.empty) {
+    const messageText = text.trim();
+
+    const result = await broadcastToAllUsers(async (targetUserId) => {
+      try {
+        await bot.telegram.sendMessage(targetUserId, messageText, { parse_mode: "HTML" });
+      } catch (err) {
+        // Fallback to plain text if HTML formatting fails
+        await bot.telegram.sendMessage(targetUserId, messageText);
+      }
+    });
+
+    if (result.total === 0) {
       return res.json({
         ok: true,
-        message: "Hozircha botda foydalanuvchilar yo'q",
+        message: "Hozircha botda foydalanuvchilar mavjud emas",
         totalUsers: 0,
         successCount: 0,
         failCount: 0
       });
     }
 
-    let successCount = 0;
-    let failCount = 0;
-    const messageText = text.trim();
-
-    const sendPromises: Promise<void>[] = [];
-
-    for (const docSnap of usersSnap.docs) {
-      const user_id = Number(docSnap.id);
-      if (!user_id || isNaN(user_id)) continue;
-
-      sendPromises.push(
-        messageQueue.add(async () => {
-          try {
-            await bot.telegram.sendMessage(user_id, messageText, { parse_mode: "HTML" });
-            successCount++;
-          } catch (err1) {
-            try {
-              await bot.telegram.sendMessage(user_id, messageText);
-              successCount++;
-            } catch (err2) {
-              failCount++;
-            }
-          }
-        })
-      );
-    }
-
-    await Promise.all(sendPromises);
-
     res.json({
       ok: true,
-      message: `✅ Xabar ${successCount} ta foydalanuvchiga yuborildi!${failCount > 0 ? ` (${failCount} ta yetib bormadi/bloklagan)` : ''}`,
-      totalUsers: usersSnap.size,
-      successCount,
-      failCount
+      message: `✅ Xabar ${result.success} ta foydalanuvchiga yuborildi!${result.fail > 0 ? ` (${result.fail} ta yetib bormadi/bloklagan)` : ''}`,
+      totalUsers: result.total,
+      successCount: result.success,
+      failCount: result.fail
     });
   } catch (err: any) {
     console.error("Broadcast API error:", err);

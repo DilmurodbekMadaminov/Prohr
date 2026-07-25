@@ -33,6 +33,7 @@ interface Settings {
   omon_urganch_link: string;
   omon_gurlan_link: string;
   omon_shovot_link: string;
+  admin_id?: string;
 }
 
 interface Status {
@@ -52,7 +53,8 @@ export default function App() {
     hdp_link: '',
     omon_urganch_link: '',
     omon_gurlan_link: '',
-    omon_shovot_link: ''
+    omon_shovot_link: '',
+    admin_id: ''
   });
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -277,6 +279,29 @@ export default function App() {
 
           <div className="space-y-4">
             
+            {/* Admin Telegram ID */}
+            <div className="p-4 rounded-xl border border-slate-200 bg-amber-50/30 space-y-2">
+              <label className="block text-xs font-bold text-amber-800 uppercase tracking-wider">Admin Telegram ID ( /admin buyrug'i ruxsati uchun )</label>
+              <div className="flex gap-2">
+                <input 
+                  type="text"
+                  value={settings.admin_id || ''}
+                  onChange={(e) => setSettings({ ...settings, admin_id: e.target.value })}
+                  placeholder="masalan: 123456789"
+                  className="flex-1 bg-white border border-slate-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
+                />
+                <button
+                  onClick={() => handleSaveSetting('admin_id', settings.admin_id || '')}
+                  disabled={savingKey === 'admin_id'}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  Saqlash
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">Telegram botda <b>/admin</b> buyrug'ini ishlatish huquqiga ega bo'lgan foydalanuvchining Telegram ID raqami.</p>
+            </div>
+
             {/* Channel Username */}
             <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Majburiy Obuna Kanali</label>

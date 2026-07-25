@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, Check, Link, Radio, ExternalLink } from 'lucide-react';
+import { Settings, Save, Check, Link, Radio, ExternalLink, ShieldCheck } from 'lucide-react';
 import { BotSettings } from '../types';
 
 interface SettingsPanelProps {
@@ -11,6 +11,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }
   const [channelUsername, setChannelUsername] = useState('');
   const [hdpLink, setHdpLink] = useState('');
   const [omonLink, setOmonLink] = useState('');
+  const [adminId, setAdminId] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,6 +21,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }
       setChannelUsername(settings.channel_username || '');
       setHdpLink(settings.hdp_link || '');
       setOmonLink(settings.omon_link || '');
+      setAdminId(settings.admin_id || '');
     }
   }, [settings]);
 
@@ -34,6 +36,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }
         channel_username: channelUsername.trim(),
         hdp_link: hdpLink.trim(),
         omon_link: omonLink.trim(),
+        admin_id: adminId.trim(),
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -95,6 +98,25 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }
           </div>
           <p className="text-[11px] text-slate-500 mt-1">
             Foydalanuvchi botdan foydalanishi uchun ushbu kanalga obuna bo'lishi shart.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-slate-300 mb-1.5">
+            <span className="flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+              Admin Telegram ID ( /admin buyrug'i uchun )
+            </span>
+          </label>
+          <input
+            type="text"
+            value={adminId}
+            onChange={(e) => setAdminId(e.target.value)}
+            placeholder="masalan: 123456789"
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition font-mono"
+          />
+          <p className="text-[11px] text-slate-500 mt-1">
+            Botda /admin buyrug'idan foydalanishi mumkin bo'lgan admin foydalanuvchi Telegram ID raqami.
           </p>
         </div>
 

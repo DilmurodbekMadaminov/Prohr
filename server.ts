@@ -195,6 +195,17 @@ async function setSetting(key: string, value: string) {
   setDoc(docRef, { value }, { merge: true }).catch(e => handleFirestoreError(e, OperationType.WRITE, `settings/${key}`));
 }
 
+function checkIsAdmin(userId: number): boolean {
+  if (!userId) return false;
+  if (ADMIN_ID && userId === ADMIN_ID) return true;
+  const dbAdminStr = getSettingSync('admin_id') || process.env.ADMIN_ID;
+  if (dbAdminStr) {
+    const ids = String(dbAdminStr).split(',').map(s => Number(s.trim())).filter(n => !isNaN(n) && n > 0);
+    if (ids.includes(userId)) return true;
+  }
+  return false;
+}
+
 const adminState = new Map<number, string>();
 
 // Ultra-fast deduplicated non-blocking subscription check with instant caching
@@ -563,54 +574,71 @@ if (bot) {
   }
 
   bot.command("admin", async (ctx) => {
-    if (!ADMIN_ID || ctx.from.id !== ADMIN_ID) return;
-    await sendAdminPanel(ctx);
+    if (checkIsAdmin(ctx.from.id)) {
+      return await sendAdminPanel(ctx);
+    }
+
+    return ctx.reply(`⚠️ <b>Siz administrator emassiz yoki Admin ID hali kiritilmagan!</b>\n\nSizning Telegram ID raqamingiz: <code>${ctx.from.id}</code>\n\n<b>Admin ruxsatini berish uchun:</b>\n1. Web Dashboard (Admin Panel) dagi <b>Admin Telegram ID</b> bo'limiga ushbu ID raqamingizni (<code>${ctx.from.id}</code>) kiriting va saqlang.\n2. Yoki .env fayliga <code>ADMIN_ID=${ctx.from.id}</code> deb yozing.\n\nSo'ngra qayta <b>/admin</b> buyrug'ini bosing.`, { parse_mode: "HTML" });
   });
 
   bot.action("edit_channel", async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
+    if (!checkIsAdmin(ctx.from.id)) {
+      return ctx.answerCbQuery("⚠️ Ruxsat berilmagan!", { show_alert: true }).catch(() => {});
+    }
     adminState.set(ctx.from.id, "awaiting_channel");
     ctx.reply("Yangi kanal username'ini yuboring (masalan: @yangi_kanal):");
     ctx.answerCbQuery().catch(() => {});
   });
 
   bot.action("edit_hdp", async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
+    if (!checkIsAdmin(ctx.from.id)) {
+      return ctx.answerCbQuery("⚠️ Ruxsat berilmagan!", { show_alert: true }).catch(() => {});
+    }
     adminState.set(ctx.from.id, "awaiting_hdp");
     ctx.reply("Yangi HDP LC silkasini yuboring (https://...):");
     ctx.answerCbQuery().catch(() => {});
   });
 
   bot.action("edit_omon_urganch", async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
+    if (!checkIsAdmin(ctx.from.id)) {
+      return ctx.answerCbQuery("⚠️ Ruxsat berilmagan!", { show_alert: true }).catch(() => {});
+    }
     adminState.set(ctx.from.id, "awaiting_omon_urganch");
     ctx.reply("Yangi Omon School Urganch filiali silkasini yuboring (https://...):");
     ctx.answerCbQuery().catch(() => {});
   });
 
   bot.action("edit_omon_gurlan", async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
+    if (!checkIsAdmin(ctx.from.id)) {
+      return ctx.answerCbQuery("⚠️ Ruxsat berilmagan!", { show_alert: true }).catch(() => {});
+    }
     adminState.set(ctx.from.id, "awaiting_omon_gurlan");
     ctx.reply("Yangi Omon School Gurlan filiali silkasini yuboring (https://...):");
     ctx.answerCbQuery().catch(() => {});
   });
 
   bot.action("edit_omon_shovot", async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
+    if (!checkIsAdmin(ctx.from.id)) {
+      return ctx.answerCbQuery("⚠️ Ruxsat berilmagan!", { show_alert: true }).catch(() => {});
+    }
     adminState.set(ctx.from.id, "awaiting_omon_shovot");
     ctx.reply("Yangi Omon School Shovot filiali silkasini yuboring (https://...):");
     ctx.answerCbQuery().catch(() => {});
   });
 
   bot.action("broadcast_msg", async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
+    if (!checkIsAdmin(ctx.from.id)) {
+      return ctx.answerCbQuery("⚠️ Ruxsat berilmagan!", { show_alert: true }).catch(() => {});
+    }
     adminState.set(ctx.from.id, "awaiting_broadcast");
     ctx.reply("Tarqatmoqchi bo'lgan xabaringizni yuboring (Matn, rasm, video va h.k):");
     ctx.answerCbQuery().catch(() => {});
   });
 
   bot.action("cancel_admin", async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
+    if (!checkIsAdmin(ctx.from.id)) {
+      return ctx.answerCbQuery("⚠️ Ruxsat berilmagan!").catch(() => {});
+    }
     adminState.delete(ctx.from.id);
     ctx.deleteMessage().catch(() => {});
     ctx.answerCbQuery("Bekor qilindi").catch(() => {});
@@ -630,7 +658,7 @@ if (bot) {
 
   bot.on("message", async (ctx, next) => {
     const userId = ctx.from.id;
-    if (userId === ADMIN_ID && adminState.has(userId)) {
+    if (checkIsAdmin(userId) && adminState.has(userId)) {
       const state = adminState.get(userId);
 
       if (state === "awaiting_broadcast") {
@@ -734,7 +762,7 @@ app.get("/api/status", async (req, res) => {
     ok: true,
     botActive: !!bot,
     hasToken: !!BOT_TOKEN,
-    adminIdConfigured: !!ADMIN_ID,
+    adminIdConfigured: !!(ADMIN_ID || getSettingSync('admin_id')),
     channelUsername: getSettingSync('channel_username', CHANNEL_USERNAME)
   });
 });
@@ -778,9 +806,11 @@ app.get("/api/settings", (req, res) => {
   res.json({
     channel_username: getSettingSync('channel_username', CHANNEL_USERNAME),
     hdp_link: getSettingSync('hdp_link'),
+    omon_link: omonLink,
     omon_urganch_link: getSettingSync('omon_urganch_link') || omonLink,
     omon_gurlan_link: getSettingSync('omon_gurlan_link') || omonLink,
     omon_shovot_link: getSettingSync('omon_shovot_link') || omonLink,
+    admin_id: getSettingSync('admin_id', process.env.ADMIN_ID || '')
   });
 });
 

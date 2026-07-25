@@ -30,4 +30,5 @@ export interface BotSettings {
   hdp_link: string;
   omon_link: string;
   channel_username: string;
+  admin_id?: string;
 }

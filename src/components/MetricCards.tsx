@@ -9,12 +9,17 @@ interface MetricCardsProps {
 
 export const MetricCards: React.FC<MetricCardsProps> = ({ stats, settings }) => {
   const safeFormat = (val: any): string => {
-    if (typeof val === 'number' && !isNaN(val)) {
-      return val.toLocaleString();
-    }
-    if (typeof val === 'string') {
-      const num = Number(val);
-      if (!isNaN(num)) return num.toLocaleString();
+    if (val === undefined || val === null) return '0';
+    try {
+      if (typeof val === 'number' && !isNaN(val)) {
+        return val.toLocaleString();
+      }
+      if (typeof val === 'string' && val.trim() !== '') {
+        const num = Number(val);
+        if (!isNaN(num)) return num.toLocaleString();
+      }
+    } catch {
+      return '0';
     }
     return '0';
   };

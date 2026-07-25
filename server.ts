@@ -784,6 +784,92 @@ app.get("/api/settings", (req, res) => {
   });
 });
 
+app.get("/api/users", async (req, res) => {
+  try {
+    const usersSnap = await getDocs(collection(db, 'users'));
+    const users: any[] = [];
+    usersSnap.forEach((docSnap) => {
+      const data = docSnap.data();
+      const hdp = data.hdp || 0;
+      const omon = (data.omon_urganch || 0) + (data.omon_gurlan || 0) + (data.omon_shovot || 0);
+      users.push({
+        id: docSnap.id,
+        hdp,
+        omon,
+        total: hdp + omon,
+        updatedAt: data.updatedAt || null
+      });
+    });
+    res.json({ users });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/broadcast", async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ error: "Xabar matni kiritilmagan" });
+    }
+
+    if (!bot) {
+      return res.status(500).json({ error: "Bot token sozlanmagan" });
+    }
+
+    const usersSnap = await getDocs(collection(db, 'users'));
+    if (usersSnap.empty) {
+      return res.json({
+        ok: true,
+        message: "Hozircha botda foydalanuvchilar yo'q",
+        totalUsers: 0,
+        successCount: 0,
+        failCount: 0
+      });
+    }
+
+    let successCount = 0;
+    let failCount = 0;
+    const messageText = text.trim();
+
+    const sendPromises: Promise<void>[] = [];
+
+    for (const docSnap of usersSnap.docs) {
+      const user_id = Number(docSnap.id);
+      if (!user_id || isNaN(user_id)) continue;
+
+      sendPromises.push(
+        messageQueue.add(async () => {
+          try {
+            await bot.telegram.sendMessage(user_id, messageText, { parse_mode: "HTML" });
+            successCount++;
+          } catch (err1) {
+            try {
+              await bot.telegram.sendMessage(user_id, messageText);
+              successCount++;
+            } catch (err2) {
+              failCount++;
+            }
+          }
+        })
+      );
+    }
+
+    await Promise.all(sendPromises);
+
+    res.json({
+      ok: true,
+      message: `✅ Xabar ${successCount} ta foydalanuvchiga yuborildi!${failCount > 0 ? ` (${failCount} ta yetib bormadi/bloklagan)` : ''}`,
+      totalUsers: usersSnap.size,
+      successCount,
+      failCount
+    });
+  } catch (err: any) {
+    console.error("Broadcast API error:", err);
+    res.status(500).json({ error: err.message || "Xabar yuborishda xatolik yuz berdi" });
+  }
+});
+
 app.post("/api/settings", async (req, res) => {
   try {
     const { key, value } = req.body;

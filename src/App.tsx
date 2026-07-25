@@ -14,6 +14,9 @@ import {
   Zap,
   ChevronRight
 } from 'lucide-react';
+import { BroadcastCenter } from './components/BroadcastCenter';
+import { UsersTable } from './components/UsersTable';
+import { UserActivity } from './types';
 
 interface Stats {
   usersCount: number;
@@ -43,6 +46,7 @@ interface Status {
 export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [users, setUsers] = useState<UserActivity[]>([]);
   const [settings, setSettings] = useState<Settings>({
     channel_username: '',
     hdp_link: '',
@@ -57,15 +61,17 @@ export default function App() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [resStatus, resStats, resSettings] = await Promise.all([
+      const [resStatus, resStats, resSettings, resUsers] = await Promise.all([
         fetch('/api/status').then(r => r.json()).catch(() => null),
         fetch('/api/stats').then(r => r.json()).catch(() => null),
-        fetch('/api/settings').then(r => r.json()).catch(() => null)
+        fetch('/api/settings').then(r => r.json()).catch(() => null),
+        fetch('/api/users').then(r => r.json()).catch(() => null)
       ]);
 
       if (resStatus) setStatus(resStatus);
       if (resStats) setStats(resStats);
       if (resSettings) setSettings(resSettings);
+      if (resUsers?.users) setUsers(resUsers.users);
     } catch (e) {
       console.error("Error fetching dashboard data:", e);
     } finally {
@@ -78,6 +84,23 @@ export default function App() {
     const interval = setInterval(fetchData, 10000); // refresh stats every 10s
     return () => clearInterval(interval);
   }, []);
+
+  const handleSendBroadcast = async (text: string) => {
+    const res = await fetch('/api/broadcast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || "Xabar yuborishda xatolik yuz berdi");
+    }
+    return {
+      success: true,
+      message: data.message,
+      totalUsers: data.totalUsers ?? 0
+    };
+  };
 
   const handleSaveSetting = async (key: keyof Settings, value: string) => {
     setSavingKey(key);
@@ -394,6 +417,12 @@ export default function App() {
 
           </div>
         </div>
+
+        {/* Broadcast Center Section */}
+        <BroadcastCenter totalUsers={stats?.usersCount ?? 0} onSendBroadcast={handleSendBroadcast} />
+
+        {/* Active Users Table Section */}
+        <UsersTable users={users} />
 
         {/* Telegram Layout Preview Component */}
         <div className="bg-slate-900 text-slate-100 rounded-2xl p-6 space-y-4">

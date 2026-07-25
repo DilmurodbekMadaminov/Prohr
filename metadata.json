@@ -1,8 +1,6 @@
 {
-  "name": "Telegram Job Bot Dashboard",
-  "description": "Admin panel and analytics dashboard for Telegram job application bot (Xorazm Ish Bozor)",
+  "name": "HR Bot & Omon School Portal",
+  "description": "Telegram HR bot and management dashboard for HDP LC and Omon School branches (Urganch, Gurlan, Shovot).",
   "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

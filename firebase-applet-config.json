@@ -1,12 +1,10 @@
 {
-  "projectId": "bamboo-tune-507pf",
-  "appId": "1:900757129645:web:f430a2ac052e6912753924",
-  "apiKey": "AIzaSyD7ntY19WLwHPUdw6yVKnpCBA0elkIQGk4",
-  "authDomain": "bamboo-tune-507pf.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-remixhr-099e1c4d-0415-4415-a9f7-241f6da63e20",
-  "storageBucket": "bamboo-tune-507pf.firebasestorage.app",
-  "messagingSenderId": "900757129645",
-  "measurementId": "",
-  "oAuthClientId": "900757129645-197qsv2pevdko82k0qvc0keh4v9312u9.apps.googleusercontent.com",
-  "recaptchaSiteKey": ""
+  "projectId": "project-49b2d107-6e99-4c47-91b",
+  "appId": "1:458975938544:web:ddc6370535951341b4bf35",
+  "apiKey": "AIzaSyD3EEglHgxNq2Rt68fkgXk_5NDLzd1Vyw0",
+  "authDomain": "project-49b2d107-6e99-4c47-91b.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-be28941b-74be-44ac-bdc6-fe3fa07e4544",
+  "storageBucket": "project-49b2d107-6e99-4c47-91b.firebasestorage.app",
+  "messagingSenderId": "458975938544",
+  "measurementId": ""
 }

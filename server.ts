@@ -2,6 +2,7 @@ import "dotenv/config";
 import { Telegraf, Markup } from "telegraf";
 import { message } from "telegraf/filters";
 import express from "express";
+import path from "path";
 import { LRUCache } from "lru-cache";
 import { Agent } from "https";
 import * as fs from "fs";
@@ -28,6 +29,134 @@ const bot = BOT_TOKEN ? new Telegraf(BOT_TOKEN, {
   telegram: { agent: httpsAgent }
 }) : null;
 const app = express();
+app.use(express.json());
+
+// ================= API ROUTES FOR DASHBOARD =================
+app.get("/api/status", async (req, res) => {
+  try {
+    const channel = await getSetting('channel_username');
+    res.json({
+      configured: !!BOT_TOKEN,
+      botTokenMasked: BOT_TOKEN ? `${BOT_TOKEN.slice(0, 6)}...${BOT_TOKEN.slice(-4)}` : null,
+      adminIdSet: !!ADMIN_ID,
+      adminId: ADMIN_ID || null,
+      appUrl: process.env.APP_URL || null,
+      channelUsername: channel || CHANNEL_USERNAME,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/stats", async (req, res) => {
+  try {
+    const usersSnap = await getDocs(collection(db, 'users')).catch(e => handleFirestoreError(e, OperationType.LIST, 'users'));
+    let totalHdp = 0;
+    let totalOmon = 0;
+    const users: { id: string; hdp: number; omon: number; total: number }[] = [];
+    
+    usersSnap.forEach((docSnap) => {
+      const data = docSnap.data();
+      const hdp = data.hdp || 0;
+      const omon = data.omon || 0;
+      totalHdp += hdp;
+      totalOmon += omon;
+      users.push({
+        id: docSnap.id,
+        hdp,
+        omon,
+        total: hdp + omon,
+      });
+    });
+
+    users.sort((a, b) => b.total - a.total);
+
+    res.json({
+      totalUsers: usersSnap.size,
+      totalHdp,
+      totalOmon,
+      users: users.slice(0, 50),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/settings", async (req, res) => {
+  try {
+    const hdpLink = await getSetting('hdp_link');
+    const omonLink = await getSetting('omon_link');
+    const channel = await getSetting('channel_username');
+    res.json({
+      hdp_link: hdpLink || 'https://forms.gle/f6ZiQtiqCAH1CLy87',
+      omon_link: omonLink || 'https://forms.gle/97m9hCsBFovYKKrX7',
+      channel_username: channel || CHANNEL_USERNAME,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/settings", async (req, res) => {
+  try {
+    const { hdp_link, omon_link, channel_username } = req.body;
+    if (hdp_link !== undefined) {
+      await setSetting('hdp_link', hdp_link);
+    }
+    if (omon_link !== undefined) {
+      await setSetting('omon_link', omon_link);
+    }
+    if (channel_username !== undefined) {
+      let cleaned = channel_username.trim();
+      if (!cleaned.startsWith('http') && !cleaned.startsWith('@') && !cleaned.startsWith('-')) {
+        cleaned = '@' + cleaned;
+      }
+      await setSetting('channel_username', cleaned);
+      subCache.clear();
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/broadcast", async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ error: "Xabar matni kiritilishi shart." });
+    }
+    if (!bot) {
+      return res.status(400).json({ error: "Telegram bot sozlanmagan. Iltimos, BOT_TOKEN kiriting." });
+    }
+
+    const usersSnap = await getDocs(collection(db, 'users')).catch(e => handleFirestoreError(e, OperationType.LIST, 'users'));
+    let successCount = 0;
+    let failCount = 0;
+
+    (async () => {
+      for (const docSnap of usersSnap.docs) {
+        const user_id = Number(docSnap.id);
+        await messageQueue.add(async () => {
+          try {
+            await bot.telegram.sendMessage(user_id, text.trim());
+            successCount++;
+          } catch (err) {
+            failCount++;
+          }
+        });
+      }
+    })();
+
+    res.json({
+      success: true,
+      message: `${usersSnap.size} ta foydalanuvchiga xabar tarqatish boshlandi.`,
+      totalUsers: usersSnap.size
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ================= DATABASE =================
 async function initDb() {
@@ -425,20 +554,6 @@ async function start() {
   const isRailway = !!process.env.RAILWAY_ENVIRONMENT_NAME || !!process.env.RAILWAY_STATIC_URL;
   const actualPort = (isRailway && process.env.PORT) ? parseInt(process.env.PORT) : PORT;
 
-  // start express first so health checks pass
-  const server = app.listen(actualPort, '0.0.0.0', () => {
-    console.log(`Server running on port ${actualPort}`);
-  });
-
-  // Basic route to show bot status
-  app.get('/', (req, res) => {
-    if (!BOT_TOKEN) {
-      res.send("<h1>Bot Error</h1><p>BOT_TOKEN is missing. Please add it to the Secrets panel.</p>");
-    } else {
-      res.send("<h1>Bot is Running</h1><p>The Telegram bot is active.</p>");
-    }
-  });
-
   try {
     await initDb();
   } catch (err) {
@@ -475,6 +590,27 @@ async function start() {
       }
     }
   }
+
+  // Vite middleware for development or static serving for production
+  if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  // start express server
+  const server = app.listen(actualPort, '0.0.0.0', () => {
+    console.log(`Server running on port ${actualPort}`);
+  });
 
   // graceful shutdown
   const shutdown = () => {

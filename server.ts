@@ -59,7 +59,7 @@ process.on("uncaughtException", (err) => {
 });
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const CHANNEL_USERNAME = process.env.CHANNEL_USERNAME || "https://t.me/Xorazm_ish_bozor1";
+const CHANNEL_USERNAME = process.env.CHANNEL_USERNAME || "https://t.me/Xorazm_ish_elon_uz";
 const ADMIN_ID = process.env.ADMIN_ID ? Number(process.env.ADMIN_ID) : undefined;
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
@@ -172,10 +172,13 @@ async function initDb() {
         setDoc(docRef, { value: defVal }, { merge: true }).catch(e => handleFirestoreError(e, OperationType.WRITE, `settings/${key}`));
       }
     }
-    // Update omon_gurlan_link specifically to the requested form URL
+    // Update omon_gurlan_link and channel_username specifically to the requested URLs
     const gurlanUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSfO59InkqjPVYwJTqsXwFS-RuDilzNMTEzz5hMv56SXqZqFjA/viewform?usp=publish-editor';
+    const channelUrl = 'https://t.me/Xorazm_ish_elon_uz';
     settingsCache.set('omon_gurlan_link', gurlanUrl);
+    settingsCache.set('channel_username', channelUrl);
     setDoc(doc(db, 'settings', 'omon_gurlan_link'), { value: gurlanUrl }, { merge: true }).catch(e => handleFirestoreError(e, OperationType.WRITE, 'settings/omon_gurlan_link'));
+    setDoc(doc(db, 'settings', 'channel_username'), { value: channelUrl }, { merge: true }).catch(e => handleFirestoreError(e, OperationType.WRITE, 'settings/channel_username'));
   } catch (err: any) {
     console.error("initDb notice:", err.message);
   }
@@ -336,16 +339,20 @@ if (bot) {
   });
 
   bot.action("check_sub", async (ctx) => {
-    ctx.answerCbQuery().catch(() => {});
-    subCache.delete(ctx.from.id);
+    ctx.answerCbQuery("Kanal obunasi tekshirilmoqda...").catch(() => {});
+    const userId = ctx.from.id;
+    subCache.delete(userId);
     const subscribed = await checkSubscription(ctx);
 
     if (!subscribed) {
-      return ctx.reply("Siz hali obuna bo‘lmagansiz!", subscriptionKeyboard());
+      return ctx.reply("❌ Siz hali kanalga obuna bo‘lmadingiz! Iltimos, kanalga obuna bo‘lib, qayta 'Tekshirish' tugmasini bosing:", subscriptionKeyboard());
     }
 
+    // Explicitly cache as subscribed for 24 hours so all buttons work instantly
+    subCache.set(userId, true, { ttl: 1000 * 60 * 60 * 24 });
+
     await ctx.deleteMessage().catch(() => {});
-    return ctx.reply("Ish joyini tanlang:", mainMenuKeyboard());
+    return ctx.reply("✅ Obuna tasdiqlandi! Ish joyini tanlang:", mainMenuKeyboard());
   });
 
   bot.hears([/hdp/i, "HDP LC", "HDP"], async (ctx) => {

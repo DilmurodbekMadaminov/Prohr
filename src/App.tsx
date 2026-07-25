@@ -262,7 +262,7 @@ export default function App() {
                   type="text"
                   value={settings.channel_username}
                   onChange={(e) => setSettings({ ...settings, channel_username: e.target.value })}
-                  placeholder="https://t.me/Xorazm_ish_bozor1"
+                  placeholder="https://t.me/Xorazm_ish_elon_uz"
                   className="flex-1 bg-white border border-slate-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
                 />
                 <button

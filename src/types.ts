@@ -15,10 +15,15 @@ export interface UserActivity {
 }
 
 export interface BotStats {
-  totalUsers: number;
-  totalHdp: number;
-  totalOmon: number;
-  users: UserActivity[];
+  totalUsers?: number;
+  usersCount?: number;
+  totalHdp?: number;
+  totalOmon?: number;
+  totalOmonUrganch?: number;
+  totalOmonGurlan?: number;
+  totalOmonShovot?: number;
+  totalOmonAll?: number;
+  users?: UserActivity[];
 }
 
 export interface BotSettings {

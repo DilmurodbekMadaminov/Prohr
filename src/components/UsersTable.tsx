@@ -6,18 +6,20 @@ interface UsersTableProps {
   users: UserActivity[];
 }
 
-export const UsersTable: React.FC<UsersTableProps> = ({ users }) => {
+export const UsersTable: React.FC<UsersTableProps> = ({ users = [] }) => {
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredUsers = users.filter((u) =>
-    u.id.toLowerCase().includes(searchTerm.toLowerCase())
+  const safeUsers = users || [];
+
+  const filteredUsers = safeUsers.filter((u) =>
+    (u?.id || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const downloadCSV = () => {
-    if (users.length === 0) return;
+    if (safeUsers.length === 0) return;
     const headers = "Telegram_User_ID,HDP_Clicks,Omon_Clicks,Total_Interactions\n";
-    const rows = users
-      .map((u) => `${u.id},${u.hdp},${u.omon},${u.total}`)
+    const rows = safeUsers
+      .map((u) => `${u?.id || ''},${u?.hdp ?? 0},${u?.omon ?? 0},${u?.total ?? 0}`)
       .join("\n");
     const blob = new Blob([headers + rows], { type: "text/csv" });
     const url = URL.createObjectURL(blob);

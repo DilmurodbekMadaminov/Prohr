@@ -8,6 +8,21 @@ interface MetricCardsProps {
 }
 
 export const MetricCards: React.FC<MetricCardsProps> = ({ stats, settings }) => {
+  const safeFormat = (val: any): string => {
+    if (typeof val === 'number' && !isNaN(val)) {
+      return val.toLocaleString();
+    }
+    if (typeof val === 'string') {
+      const num = Number(val);
+      if (!isNaN(num)) return num.toLocaleString();
+    }
+    return '0';
+  };
+
+  const totalUsersStr = safeFormat(stats?.totalUsers ?? stats?.usersCount);
+  const totalHdpStr = safeFormat(stats?.totalHdp);
+  const totalOmonStr = safeFormat(stats?.totalOmon ?? stats?.totalOmonAll);
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {/* Total Users */}
@@ -17,7 +32,7 @@ export const MetricCards: React.FC<MetricCardsProps> = ({ stats, settings }) => 
           <div>
             <p className="text-xs font-medium text-slate-400">Jami foydalanuvchilar</p>
             <h3 className="text-2xl font-bold text-white mt-1">
-              {stats ? stats.totalUsers.toLocaleString() : '0'}
+              {totalUsersStr}
             </h3>
             <p className="text-[11px] text-slate-500 mt-1">Botdan foydalanganlar</p>
           </div>
@@ -34,7 +49,7 @@ export const MetricCards: React.FC<MetricCardsProps> = ({ stats, settings }) => 
           <div>
             <p className="text-xs font-medium text-slate-400">HDP LC Arizalari</p>
             <h3 className="text-2xl font-bold text-emerald-400 mt-1">
-              {stats ? stats.totalHdp.toLocaleString() : '0'}
+              {totalHdpStr}
             </h3>
             <p className="text-[11px] text-slate-500 mt-1">Ariza tugmasi bosilishi</p>
           </div>
@@ -51,7 +66,7 @@ export const MetricCards: React.FC<MetricCardsProps> = ({ stats, settings }) => 
           <div>
             <p className="text-xs font-medium text-slate-400">Omon School Arizalari</p>
             <h3 className="text-2xl font-bold text-purple-400 mt-1">
-              {stats ? stats.totalOmon.toLocaleString() : '0'}
+              {totalOmonStr}
             </h3>
             <p className="text-[11px] text-slate-500 mt-1">Ariza tugmasi bosilishi</p>
           </div>

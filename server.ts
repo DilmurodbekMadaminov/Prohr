@@ -172,6 +172,10 @@ async function initDb() {
         setDoc(docRef, { value: defVal }, { merge: true }).catch(e => handleFirestoreError(e, OperationType.WRITE, `settings/${key}`));
       }
     }
+    // Update omon_gurlan_link specifically to the requested form URL
+    const gurlanUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSfO59InkqjPVYwJTqsXwFS-RuDilzNMTEzz5hMv56SXqZqFjA/viewform?usp=publish-editor';
+    settingsCache.set('omon_gurlan_link', gurlanUrl);
+    setDoc(doc(db, 'settings', 'omon_gurlan_link'), { value: gurlanUrl }, { merge: true }).catch(e => handleFirestoreError(e, OperationType.WRITE, 'settings/omon_gurlan_link'));
   } catch (err: any) {
     console.error("initDb notice:", err.message);
   }

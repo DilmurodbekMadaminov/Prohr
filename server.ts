@@ -212,56 +212,100 @@ const adminState = new Map<number, string>();
 async function broadcastToAllUsers(
   sendFn: (user_id: number) => Promise<any>
 ): Promise<{ total: number; success: number; fail: number }> {
-  const usersSnap = await getDocs(collection(db, 'users'));
-  if (usersSnap.empty) {
-    return { total: 0, success: 0, fail: 0 };
+  const userIdsSet = new Set<number>();
+
+  try {
+    const usersSnap = await getDocs(collection(db, 'users'));
+    usersSnap.forEach((docSnap) => {
+      const data = docSnap.data();
+      const possibleIds = [
+        docSnap.id,
+        data.user_id,
+        data.userId,
+        data.id,
+        data.telegram_id,
+        data.chat_id,
+        data.uid,
+        data.tg_id
+      ];
+      for (const p of possibleIds) {
+        if (p) {
+          const num = Number(p);
+          if (num && !isNaN(num) && num > 0) {
+            userIdsSet.add(num);
+          }
+        }
+      }
+    });
+  } catch (err) {
+    console.error("Firestore getDocs error in broadcastToAllUsers:", err);
   }
 
-  const userIds: number[] = [];
-  usersSnap.forEach((docSnap) => {
-    const idNum = Number(docSnap.id);
-    if (idNum && !isNaN(idNum) && idNum > 0) {
-      userIds.push(idNum);
-    }
-  });
+  // Include configured admin ID(s)
+  const dbAdminStr = getSettingSync('admin_id') || process.env.ADMIN_ID;
+  if (dbAdminStr) {
+    String(dbAdminStr).split(',').forEach(s => {
+      const num = Number(s.trim());
+      if (num && !isNaN(num) && num > 0) {
+        userIdsSet.add(num);
+      }
+    });
+  }
+  if (ADMIN_ID) {
+    userIdsSet.add(ADMIN_ID);
+  }
+
+  const userIds = Array.from(userIdsSet);
+
+  if (userIds.length === 0) {
+    return { total: 0, success: 0, fail: 0 };
+  }
 
   let success = 0;
   let fail = 0;
 
-  // Process in batches of 20 with 50ms delay to strictly respect Telegram limits (~25 msgs/sec)
-  const batchSize = 20;
-  for (let i = 0; i < userIds.length; i += batchSize) {
-    const batch = userIds.slice(i, i + batchSize);
-    await Promise.all(
-      batch.map(async (user_id) => {
-        let sent = false;
-        // Retry logic for 429 flood wait
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try {
-            await sendFn(user_id);
-            sent = true;
-            break;
-          } catch (err: any) {
-            const errorMsg = err?.message || String(err);
-            if (errorMsg.includes("429") || errorMsg.includes("Too Many Requests")) {
-              const retryAfter = err?.parameters?.retry_after ? err.parameters.retry_after * 1000 : 1500;
-              await new Promise((r) => setTimeout(r, retryAfter));
-              continue;
-            }
-            break; // Non-retryable (e.g., bot blocked by user)
+  // High-speed worker pool (Telegram max rate limit is ~30 msg/sec)
+  const CONCURRENCY = 30;
+  let currentIndex = 0;
+
+  async function worker() {
+    while (currentIndex < userIds.length) {
+      const i = currentIndex++;
+      if (i >= userIds.length) break;
+      const targetUserId = userIds[i];
+
+      let sent = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await sendFn(targetUserId);
+          sent = true;
+          break;
+        } catch (err: any) {
+          const errorMsg = err?.message || String(err);
+          if (errorMsg.includes("429") || errorMsg.includes("Too Many Requests")) {
+            const retryAfter = err?.parameters?.retry_after ? err.parameters.retry_after * 1000 : 1000;
+            await new Promise((r) => setTimeout(r, retryAfter));
+            continue;
           }
+          break; // Non-retryable (e.g., bot blocked by user)
         }
-        if (sent) {
-          success++;
-        } else {
-          fail++;
-        }
-      })
-    );
-    if (i + batchSize < userIds.length) {
-      await new Promise((r) => setTimeout(r, 50));
+      }
+
+      if (sent) {
+        success++;
+      } else {
+        fail++;
+      }
     }
   }
+
+  const workers: Promise<void>[] = [];
+  const workerCount = Math.min(CONCURRENCY, userIds.length);
+  for (let w = 0; w < workerCount; w++) {
+    workers.push(worker());
+  }
+
+  await Promise.all(workers);
 
   return { total: userIds.length, success, fail };
 }
@@ -391,19 +435,13 @@ if (bot) {
       (async () => {
         try {
           const uRef = doc(db, 'users', String(uId));
-          const uSnap = await getDoc(uRef);
-          if (!uSnap.exists()) {
-            await setDoc(uRef, {
-              hdp: 0,
-              omon: 0,
-              omon_urganch: 0,
-              omon_gurlan: 0,
-              omon_shovot: 0,
-              firstName: ctx.from.first_name || '',
-              username: ctx.from.username || '',
-              createdAt: new Date().toISOString()
-            }, { merge: true });
-          }
+          await setDoc(uRef, {
+            user_id: uId,
+            firstName: ctx.from.first_name || '',
+            username: ctx.from.username || '',
+            lastActive: new Date().toISOString()
+          }, { merge: true });
+          statsCache.usersCount = 0; // invalidate cache so next /api/stats call gets live count
         } catch (e) {}
       })();
     }

@@ -15,7 +15,11 @@ export const BroadcastCenter: React.FC<BroadcastCenterProps> = ({ totalUsers, on
     e.preventDefault();
     if (!text.trim()) return;
 
-    if (!window.confirm(`Haqiqatan ham barcha (${totalUsers}) foydalanuvchilarga xabar yubormoqchimisiz?`)) {
+    const confirmMsg = totalUsers > 0 
+      ? `Haqiqatan ham barcha (${totalUsers} ta) foydalanuvchilarga xabar yubormoqchimisiz?` 
+      : `Haqiqatan ham barcha foydalanuvchilarga xabar yubormoqchimisiz?`;
+
+    if (!window.confirm(confirmMsg)) {
       return;
     }
 
@@ -85,12 +89,12 @@ export const BroadcastCenter: React.FC<BroadcastCenterProps> = ({ totalUsers, on
 
         <div className="flex items-center justify-between pt-1">
           <span className="text-xs text-slate-500">
-            {totalUsers > 0 ? `Target: ${totalUsers} ta foydalanuvchi` : 'Hozircha foydalanuvchilar mavjud emas'}
+            {totalUsers > 0 ? `Target: ${totalUsers} ta foydalanuvchi` : 'Target: Barcha foydalanuvchilar'}
           </span>
           <button
             type="submit"
-            disabled={sending || !text.trim() || totalUsers === 0}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-sm disabled:opacity-50"
+            disabled={sending || !text.trim()}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-sm disabled:opacity-50 cursor-pointer"
           >
             <Send className="w-4 h-4" />
             <span>{sending ? "Yuborilmoqda..." : "Xabar Yuborish"}</span>

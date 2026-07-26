@@ -1,19 +1,62 @@
-import React, { useState } from 'react';
-import { Send, Megaphone, AlertCircle, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Send, Megaphone, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 
 interface BroadcastCenterProps {
   totalUsers: number;
   onSendBroadcast: (text: string) => Promise<{ success: boolean; message: string; totalUsers: number }>;
 }
 
+interface BroadcastStatus {
+  inProgress: boolean;
+  total: number;
+  success: number;
+  fail: number;
+  processed: number;
+  percentage: number;
+}
+
 export const BroadcastCenter: React.FC<BroadcastCenterProps> = ({ totalUsers, onSendBroadcast }) => {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [broadcastProgress, setBroadcastProgress] = useState<BroadcastStatus | null>(null);
+
+  // Poll broadcast status every 1.5 seconds if active
+  useEffect(() => {
+    let interval: any = null;
+
+    const checkStatus = async () => {
+      try {
+        const res = await fetch('/api/broadcast/status');
+        const data = await res.json();
+        if (data.ok) {
+          setBroadcastProgress(data);
+          if (!data.inProgress && broadcastProgress?.inProgress) {
+            setStatusMsg({
+              type: 'success',
+              text: `✅ Xabar tarqatish yakunlandi! Jami: ${data.total}, Yetkazildi: ${data.success}, Yetib bormadi: ${data.fail}`
+            });
+          }
+        }
+      } catch (err) {}
+    };
+
+    checkStatus();
+    interval = setInterval(checkStatus, 1500);
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, []);
 
   const handleBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim()) return;
+
+    if (broadcastProgress?.inProgress) {
+      alert("Hozirda xabar tarqatish davom etmoqda. Iltimos, u tugashini kuting!");
+      return;
+    }
 
     const confirmMsg = totalUsers > 0 
       ? `Haqiqatan ham barcha (${totalUsers} ta) foydalanuvchilarga xabar yubormoqchimisiz?` 
@@ -37,6 +80,8 @@ export const BroadcastCenter: React.FC<BroadcastCenterProps> = ({ totalUsers, on
     }
   };
 
+  const isBroadcasting = broadcastProgress?.inProgress;
+
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
       <div className="flex items-center gap-3 pb-4 border-b border-slate-800">
@@ -52,7 +97,34 @@ export const BroadcastCenter: React.FC<BroadcastCenterProps> = ({ totalUsers, on
       </div>
 
       <form onSubmit={handleBroadcast} className="mt-5 space-y-4">
-        {statusMsg && (
+        {/* Live Broadcast Progress Bar */}
+        {isBroadcasting && (
+          <div className="p-4 bg-indigo-950/50 border border-indigo-500/30 rounded-xl space-y-2">
+            <div className="flex items-center justify-between text-xs text-indigo-300 font-medium">
+              <span className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
+                Xabar yuborilmoqda...
+              </span>
+              <span>
+                {broadcastProgress.processed} / {broadcastProgress.total} ({broadcastProgress.percentage}%)
+              </span>
+            </div>
+
+            <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+              <div
+                className="bg-gradient-to-r from-indigo-500 to-emerald-400 h-full transition-all duration-300 ease-out"
+                style={{ width: `${Math.min(100, broadcastProgress.percentage)}%` }}
+              />
+            </div>
+
+            <div className="flex justify-between text-[11px] text-slate-400 pt-1">
+              <span className="text-emerald-400">✅ Yetkazildi: {broadcastProgress.success}</span>
+              <span className="text-amber-400">❌ Yetib bormadi: {broadcastProgress.fail}</span>
+            </div>
+          </div>
+        )}
+
+        {statusMsg && !isBroadcasting && (
           <div
             className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
               statusMsg.type === 'success'
@@ -76,9 +148,10 @@ export const BroadcastCenter: React.FC<BroadcastCenterProps> = ({ totalUsers, on
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
+            disabled={sending || isBroadcasting}
             rows={4}
             placeholder="Assalomu alaykum! Yangi bo'sh ish o'rinlari haqida e'lon..."
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition resize-none"
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition resize-none disabled:opacity-50"
             required
           />
           <div className="flex justify-between text-[11px] text-slate-500 mt-1">
@@ -93,11 +166,21 @@ export const BroadcastCenter: React.FC<BroadcastCenterProps> = ({ totalUsers, on
           </span>
           <button
             type="submit"
-            disabled={sending || !text.trim()}
+            disabled={sending || isBroadcasting || !text.trim()}
             className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-sm disabled:opacity-50 cursor-pointer"
           >
-            <Send className="w-4 h-4" />
-            <span>{sending ? "Yuborilmoqda..." : "Xabar Yuborish"}</span>
+            {sending || isBroadcasting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+            <span>
+              {isBroadcasting
+                ? `Yuborilmoqda (${broadcastProgress?.percentage || 0}%)`
+                : sending
+                ? "Yuborilmoqda..."
+                : "Xabar Yuborish"}
+            </span>
           </button>
         </div>
       </form>

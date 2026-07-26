@@ -58,9 +58,17 @@ process.on("uncaughtException", (err) => {
   console.error("⚠️ Uncaught Exception:", err);
 });
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const CHANNEL_USERNAME = process.env.CHANNEL_USERNAME || "https://t.me/Xorazm_ish_elon_uz";
-const ADMIN_ID = process.env.ADMIN_ID ? Number(process.env.ADMIN_ID) : undefined;
+const rawBotToken =
+  process.env.BOT_TOKEN ||
+  process.env.TELEGRAM_BOT_TOKEN ||
+  process.env.TELEGRAM_TOKEN ||
+  process.env.BOTTOKEN ||
+  process.env.TOKEN ||
+  process.env.TELEGRAM_API_TOKEN;
+
+const BOT_TOKEN = rawBotToken ? rawBotToken.trim().replace(/^["']|["']$/g, '') : undefined;
+const CHANNEL_USERNAME = process.env.CHANNEL_USERNAME || process.env.TELEGRAM_CHANNEL || "https://t.me/Xorazm_ish_elon_uz";
+const ADMIN_ID = (process.env.ADMIN_ID || process.env.TELEGRAM_ADMIN_ID) ? Number(process.env.ADMIN_ID || process.env.TELEGRAM_ADMIN_ID) : undefined;
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Memory caches for ultra-fast response
@@ -208,16 +216,92 @@ function checkIsAdmin(userId: number): boolean {
 
 const adminState = new Map<number, string>();
 
-// Helper to broadcast a message or text to all registered users safely
+// Global Broadcast State & Lock
+let activeBroadcast = {
+  inProgress: false,
+  total: 0,
+  success: 0,
+  fail: 0,
+  startedAt: null as string | null,
+  finishedAt: null as string | null,
+  notifyAdminId: null as number | null
+};
+
+let globalPauseUntil = 0;
+
+async function sendTelegramMessageSafely(
+  sendFn: (user_id: number) => Promise<any>,
+  targetUserId: number
+): Promise<boolean> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const now = Date.now();
+    if (globalPauseUntil > now) {
+      await new Promise((r) => setTimeout(r, globalPauseUntil - now));
+    }
+
+    try {
+      await sendFn(targetUserId);
+      return true;
+    } catch (err: any) {
+      const errorMsg = err?.message || String(err) || "";
+      const is429 =
+        errorMsg.includes("429") ||
+        errorMsg.includes("Too Many Requests") ||
+        err?.code === 429 ||
+        err?.response?.error_code === 429;
+
+      if (is429) {
+        const retryAfterSec =
+          err?.parameters?.retry_after ||
+          err?.response?.parameters?.retry_after ||
+          5;
+        const waitMs = retryAfterSec * 1000 + 1000;
+        globalPauseUntil = Date.now() + waitMs;
+        console.warn(
+          `[Broadcast] 429 Rate limit hit for user ${targetUserId}. Global pause for ${waitMs}ms...`
+        );
+        await new Promise((r) => setTimeout(r, waitMs));
+        continue;
+      }
+
+      // Non-retryable user errors (bot blocked, account deleted, chat not found)
+      if (
+        errorMsg.includes("403") ||
+        errorMsg.includes("blocked") ||
+        errorMsg.includes("deactivated") ||
+        errorMsg.includes("chat not found") ||
+        errorMsg.includes("user not found") ||
+        errorMsg.includes("bot was blocked")
+      ) {
+        return false;
+      }
+
+      // Transient error - brief pause before retry
+      await new Promise((r) => setTimeout(r, 600));
+    }
+  }
+  return false;
+}
+
+// Helper to broadcast a message to all registered users asynchronously without 429 conflicts
 async function broadcastToAllUsers(
-  sendFn: (user_id: number) => Promise<any>
+  sendFn: (user_id: number) => Promise<any>,
+  adminIdToNotify?: number
 ): Promise<{ total: number; success: number; fail: number }> {
+  if (activeBroadcast.inProgress) {
+    throw new Error(
+      `Hozirda xabar tarqatilmoqda (${activeBroadcast.success + activeBroadcast.fail}/${activeBroadcast.total}). Iltimos tugashini kuting!`
+    );
+  }
+
   const userIdsSet = new Set<number>();
 
   try {
     const usersSnap = await getDocs(collection(db, 'users'));
     usersSnap.forEach((docSnap) => {
       const data = docSnap.data();
+      if (data.isBanned || data.banned || data.status === 'banned') return;
+
       const possibleIds = [
         docSnap.id,
         data.user_id,
@@ -261,53 +345,52 @@ async function broadcastToAllUsers(
     return { total: 0, success: 0, fail: 0 };
   }
 
-  let success = 0;
-  let fail = 0;
+  activeBroadcast = {
+    inProgress: true,
+    total: userIds.length,
+    success: 0,
+    fail: 0,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    notifyAdminId: adminIdToNotify || null
+  };
 
-  // High-speed worker pool (Telegram max rate limit is ~30 msg/sec)
-  const CONCURRENCY = 30;
-  let currentIndex = 0;
+  // Dispatch background worker (non-blocking for HTTP/Telegraf)
+  const DELAY_MS = 40; // 25 msgs/sec safe pace
 
-  async function worker() {
-    while (currentIndex < userIds.length) {
-      const i = currentIndex++;
-      if (i >= userIds.length) break;
+  (async () => {
+    for (let i = 0; i < userIds.length; i++) {
       const targetUserId = userIds[i];
-
-      let sent = false;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          await sendFn(targetUserId);
-          sent = true;
-          break;
-        } catch (err: any) {
-          const errorMsg = err?.message || String(err);
-          if (errorMsg.includes("429") || errorMsg.includes("Too Many Requests")) {
-            const retryAfter = err?.parameters?.retry_after ? err.parameters.retry_after * 1000 : 1000;
-            await new Promise((r) => setTimeout(r, retryAfter));
-            continue;
-          }
-          break; // Non-retryable (e.g., bot blocked by user)
-        }
+      const sent = await sendTelegramMessageSafely(sendFn, targetUserId);
+      if (sent) {
+        activeBroadcast.success++;
+      } else {
+        activeBroadcast.fail++;
       }
 
-      if (sent) {
-        success++;
-      } else {
-        fail++;
+      if (i < userIds.length - 1) {
+        await new Promise((r) => setTimeout(r, DELAY_MS));
       }
     }
-  }
 
-  const workers: Promise<void>[] = [];
-  const workerCount = Math.min(CONCURRENCY, userIds.length);
-  for (let w = 0; w < workerCount; w++) {
-    workers.push(worker());
-  }
+    activeBroadcast.inProgress = false;
+    activeBroadcast.finishedAt = new Date().toISOString();
+    console.log(`[Broadcast] Done! Total: ${activeBroadcast.total}, Sent: ${activeBroadcast.success}, Failed: ${activeBroadcast.fail}`);
 
-  await Promise.all(workers);
+    if (activeBroadcast.notifyAdminId && bot) {
+      bot.telegram
+        .sendMessage(
+          activeBroadcast.notifyAdminId,
+          `✅ Xabar tarqatish yakunlandi!\n\n` +
+          `Jami foydalanuvchilar: ${activeBroadcast.total} ta\n` +
+          `Muvaffaqiyatli yetib bordi: ${activeBroadcast.success} ta\n` +
+          `Yetib bormadi (bloklagan): ${activeBroadcast.fail} ta`
+        )
+        .catch(() => {});
+    }
+  })();
 
-  return { total: userIds.length, success, fail };
+  return { total: userIds.length, success: 0, fail: 0 };
 }
 
 // Ultra-fast deduplicated non-blocking subscription check with instant caching
@@ -783,20 +866,25 @@ if (bot) {
     if (checkIsAdmin(userId) && adminState.has(userId)) {
       const state = adminState.get(userId);
 
-      if (state === "awaiting_broadcast") {
+      if (state === "awaiting_broadcast" || state === "awaiting_broadcast_msg") {
         adminState.delete(userId);
-        ctx.reply("🚀 Xabar barcha foydalanuvchilarga yuborilmoqda, iltimos kuting...");
+        if (activeBroadcast.inProgress) {
+          ctx.reply(`⚠️ Hozirda xabar tarqatish jarayoni ketmoqda (${activeBroadcast.success + activeBroadcast.fail}/${activeBroadcast.total}). Iltimos, tugashini kuting.`);
+          return;
+        }
 
-        (async () => {
-          try {
-            const res = await broadcastToAllUsers(async (targetUserId) => {
-              await ctx.copyMessage(targetUserId);
-            });
-            await ctx.reply(`✅ Xabar tarqatish yakunlandi!\n\nJami foydalanuvchilar: ${res.total} ta\nYetkazildi: ${res.success} ta\nYetib bormadi (bloklagan): ${res.fail} ta`);
-          } catch (e: any) {
-            await ctx.reply(`❌ Xabar tarqatishda xatolik yuz berdi: ${e.message}`);
+        ctx.reply("⏳ Reklama / Xabar barcha foydalanuvchilarga tarqatilmoqda, kuting...");
+
+        try {
+          const res = await broadcastToAllUsers(async (targetUserId) => {
+            await ctx.copyMessage(targetUserId);
+          }, userId);
+          if (res.total === 0) {
+            await ctx.reply("⚠️ Botda foydalanuvchilar topilmadi.");
           }
-        })();
+        } catch (e: any) {
+          await ctx.reply(`❌ Xabar tarqatishda xatolik yuz berdi: ${e.message}`);
+        }
         return;
       }
 
@@ -947,6 +1035,23 @@ app.get("/api/users", async (req, res) => {
   }
 });
 
+app.get("/api/broadcast/status", (req, res) => {
+  const processed = activeBroadcast.success + activeBroadcast.fail;
+  const percentage = activeBroadcast.total > 0 ? Math.round((processed / activeBroadcast.total) * 100) : 0;
+
+  res.json({
+    ok: true,
+    inProgress: activeBroadcast.inProgress,
+    total: activeBroadcast.total,
+    success: activeBroadcast.success,
+    fail: activeBroadcast.fail,
+    processed,
+    percentage,
+    startedAt: activeBroadcast.startedAt,
+    finishedAt: activeBroadcast.finishedAt
+  });
+});
+
 app.post("/api/broadcast", async (req, res) => {
   try {
     const { text } = req.body;
@@ -956,6 +1061,12 @@ app.post("/api/broadcast", async (req, res) => {
 
     if (!bot) {
       return res.status(500).json({ error: "Bot token sozlanmagan" });
+    }
+
+    if (activeBroadcast.inProgress) {
+      return res.status(400).json({
+        error: `Hozirda xabar tarqatilmoqda (${activeBroadcast.success + activeBroadcast.fail}/${activeBroadcast.total}). Iltimos tugashini kuting!`
+      });
     }
 
     const messageText = text.trim();
@@ -981,10 +1092,10 @@ app.post("/api/broadcast", async (req, res) => {
 
     res.json({
       ok: true,
-      message: `✅ Xabar ${result.success} ta foydalanuvchiga yuborildi!${result.fail > 0 ? ` (${result.fail} ta yetib bormadi/bloklagan)` : ''}`,
+      message: `🚀 Xabar tarqatish boshlandi! Barcha ${result.total} ta foydalanuvchiga yuborilmoqda...`,
       totalUsers: result.total,
-      successCount: result.success,
-      failCount: result.fail
+      successCount: 0,
+      failCount: 0
     });
   } catch (err: any) {
     console.error("Broadcast API error:", err);
@@ -1045,6 +1156,7 @@ async function start() {
       (async () => {
         try {
           const webhookUrl = `https://${domain}${WEBHOOK_PATH}`;
+          await bot.telegram.deleteWebhook({ drop_pending_updates: true }).catch(() => {});
           await bot.telegram.setWebhook(webhookUrl, { drop_pending_updates: true });
           console.log(`Bot launched using webhook on ${webhookUrl}`);
         } catch (err: any) {

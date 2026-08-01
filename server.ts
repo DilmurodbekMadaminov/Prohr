@@ -102,6 +102,7 @@ app.use(express.json());
 let statsCache = {
   usersCount: 0,
   totalHdp: 0,
+  totalHdpVodiy: 0,
   totalOmonUrganch: 0,
   totalOmonGurlan: 0,
   totalOmonShovot: 0,
@@ -127,6 +128,7 @@ if (bot) {
 async function initDb() {
   const defaults: Record<string, string> = {
     hdp_link: 'https://forms.gle/f6ZiQtiqCAH1CLy87',
+    hdp_vodiy_link: 'https://forms.gle/dVVii5PdmqqvQe8Y7',
     omon_link: 'https://docs.google.com/forms/d/e/1FAIpQLSda7OhEe_fFn1TDfmzvpjzyvoRQhHLCUMYl1ojKLPJZVYsglg/viewform?usp=publish-editor',
     omon_urganch_link: 'https://docs.google.com/forms/d/e/1FAIpQLSda7OhEe_fFn1TDfmzvpjzyvoRQhHLCUMYl1ojKLPJZVYsglg/viewform?usp=publish-editor',
     omon_gurlan_link: 'https://docs.google.com/forms/d/e/1FAIpQLSfO59InkqjPVYwJTqsXwFS-RuDilzNMTEzz5hMv56SXqZqFjA/viewform?usp=publish-editor',
@@ -151,6 +153,7 @@ async function initDb() {
     // Attach realtime snapshot listener for user stats (0ms API response)
     onSnapshot(collection(db, 'users'), (snapshot) => {
       let totalHdp = 0;
+      let totalHdpVodiy = 0;
       let totalOmonUrganch = 0;
       let totalOmonGurlan = 0;
       let totalOmonShovot = 0;
@@ -158,6 +161,7 @@ async function initDb() {
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
         totalHdp += data.hdp || 0;
+        totalHdpVodiy += data.hdp_vodiy || 0;
         totalOmonUrganch += data.omon_urganch || 0;
         totalOmonGurlan += data.omon_gurlan || 0;
         totalOmonShovot += data.omon_shovot || 0;
@@ -166,6 +170,7 @@ async function initDb() {
       statsCache = {
         usersCount: snapshot.size,
         totalHdp,
+        totalHdpVodiy,
         totalOmonUrganch,
         totalOmonGurlan,
         totalOmonShovot,
@@ -516,7 +521,7 @@ function mainMenuKeyboard() {
   return {
     reply_markup: {
       keyboard: [
-        [{ text: "HDP LC" }],
+        [{ text: "HDP LC" }, { text: "HDP LC Vodiy" }],
         [{ text: "Omon school Urganch filiali" }, { text: "Omon school Gurlan filiali" }],
         [{ text: "Omon school Shovot filiali" }]
       ],
@@ -536,7 +541,7 @@ function trackBranchClick(userId: number, branchField: string) {
       const userRef = doc(db, 'users', String(userId));
       const updateData: Record<string, any> = {};
       updateData[branchField] = increment(1);
-      if (branchField !== 'hdp') {
+      if (branchField !== 'hdp' && branchField !== 'hdp_vodiy') {
         updateData['omon'] = increment(1);
       }
       await setDoc(userRef, updateData, { merge: true });
@@ -577,7 +582,7 @@ if (bot) {
         const userRef = doc(db, 'users', String(userId));
         const userSnap = await getDoc(userRef);
         if (!userSnap.exists()) {
-          await setDoc(userRef, { hdp: 0, omon: 0, omon_urganch: 0, omon_gurlan: 0, omon_shovot: 0 });
+          await setDoc(userRef, { hdp: 0, hdp_vodiy: 0, omon: 0, omon_urganch: 0, omon_gurlan: 0, omon_shovot: 0 });
         }
       } catch (e) {}
     })();
@@ -608,7 +613,30 @@ if (bot) {
     return ctx.reply("✅ Obuna tasdiqlandi! Ish joyini tanlang:", mainMenuKeyboard());
   });
 
-  bot.hears([/hdp/i, "HDP LC", "HDP"], async (ctx) => {
+  bot.hears([/vodiy/i, "HDP LC Vodiy", "HDP LC vodiy", "HDP Vodiy", "HDP vodiy", "HDP Vodiy filiali", "HDP Vodiy filial"], async (ctx) => {
+    try {
+      const subscribed = await checkSubscription(ctx);
+      if (!subscribed) {
+        return ctx.reply("Avval kanalga obuna bo‘ling:", subscriptionKeyboard());
+      }
+
+      trackBranchClick(ctx.from.id, 'hdp_vodiy');
+      
+      const vodiyLink = getSettingSync('hdp_vodiy_link') || 'https://forms.gle/dVVii5PdmqqvQe8Y7';
+      const safeUrl = formatButtonUrl(vodiyLink);
+
+      return await ctx.reply("HDP LC Vodiy filiali uchun ariza topshirish:", Markup.inlineKeyboard([
+        [Markup.button.url("Ariza topshirish", safeUrl)],
+      ]));
+    } catch (err: any) {
+      console.error("HDP Vodiy hears error:", err);
+      return ctx.reply("HDP LC Vodiy filiali uchun ariza topshirish:", Markup.inlineKeyboard([
+        [Markup.button.url("Ariza topshirish", "https://forms.gle/dVVii5PdmqqvQe8Y7")],
+      ])).catch(() => {});
+    }
+  });
+
+  bot.hears([/^hdp lc$/i, /^hdp$/i, "HDP LC", "HDP"], async (ctx) => {
     try {
       const subscribed = await checkSubscription(ctx);
       if (!subscribed) {
@@ -780,12 +808,14 @@ if (bot) {
     } catch(e) {}
     
     let totalHdp = 0;
+    let totalHdpVodiy = 0;
     let totalOmonUrganch = 0;
     let totalOmonGurlan = 0;
     let totalOmonShovot = 0;
     usersSnap.forEach((docSnap: any) => {
       const data = docSnap.data();
       totalHdp += data.hdp || 0;
+      totalHdpVodiy += data.hdp_vodiy || 0;
       totalOmonUrganch += data.omon_urganch || 0;
       totalOmonGurlan += data.omon_gurlan || 0;
       totalOmonShovot += data.omon_shovot || 0;
@@ -794,17 +824,19 @@ if (bot) {
     const usersCount = usersSnap.size || 0;
 
     const hdpLink = getSettingSync('hdp_link');
+    const hdpVodiyLink = getSettingSync('hdp_vodiy_link') || 'https://forms.gle/dVVii5PdmqqvQe8Y7';
     const omonLink = getSettingSync('omon_link');
     const omonUrganchLink = getSettingSync('omon_urganch_link') || omonLink;
     const omonGurlanLink = getSettingSync('omon_gurlan_link') || omonLink;
     const omonShovotLink = getSettingSync('omon_shovot_link') || omonLink;
     const channel = getSettingSync('channel_username', CHANNEL_USERNAME);
 
-    const text = `📊 Statistika:\n\n👥 Foydalanuvchilar: ${usersCount}\n\n🔹 HDP LC: ${totalHdp}\n🔹 Urganch filiali: ${totalOmonUrganch}\n🔹 Gurlan filiali: ${totalOmonGurlan}\n🔹 Shovot filiali: ${totalOmonShovot}\n\n⚙️ <b>Joriy sozlamalar:</b>\nKanal: ${channel}\nHDP Link: ${hdpLink}\nUrganch Link: ${omonUrganchLink}\nGurlan Link: ${omonGurlanLink}\nShovot Link: ${omonShovotLink}`;
+    const text = `📊 Statistika:\n\n👥 Foydalanuvchilar: ${usersCount}\n\n🔹 HDP LC: ${totalHdp}\n🔹 HDP LC Vodiy: ${totalHdpVodiy}\n🔹 Urganch filiali: ${totalOmonUrganch}\n🔹 Gurlan filiali: ${totalOmonGurlan}\n🔹 Shovot filiali: ${totalOmonShovot}\n\n⚙️ <b>Joriy sozlamalar:</b>\nKanal: ${channel}\nHDP LC Link: ${hdpLink}\nHDP LC Vodiy Link: ${hdpVodiyLink}\nUrganch Link: ${omonUrganchLink}\nGurlan Link: ${omonGurlanLink}\nShovot Link: ${omonShovotLink}`;
 
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback("✏️ Kanalni o'zgartirish", "edit_channel")],
-      [Markup.button.callback("✏️ HDP silkani o'zgartirish", "edit_hdp")],
+      [Markup.button.callback("✏️ HDP LC silkani o'zgartirish", "edit_hdp")],
+      [Markup.button.callback("✏️ HDP LC Vodiy silkani o'zgartirish", "edit_hdp_vodiy")],
       [Markup.button.callback("✏️ Urganch silkani o'zgartirish", "edit_omon_urganch")],
       [Markup.button.callback("✏️ Gurlan silkani o'zgartirish", "edit_omon_gurlan")],
       [Markup.button.callback("✏️ Shovot silkani o'zgartirish", "edit_omon_shovot")],
@@ -830,24 +862,27 @@ if (bot) {
     } catch (e) {}
 
     let totalHdp = 0;
+    let totalHdpVodiy = 0;
     let totalOmonUrganch = 0;
     let totalOmonGurlan = 0;
     let totalOmonShovot = 0;
     usersSnap.forEach((docSnap: any) => {
       const data = docSnap.data();
       totalHdp += data.hdp || 0;
+      totalHdpVodiy += data.hdp_vodiy || 0;
       totalOmonUrganch += data.omon_urganch || 0;
       totalOmonGurlan += data.omon_gurlan || 0;
       totalOmonShovot += data.omon_shovot || 0;
     });
 
     const usersCount = usersSnap.size || 0;
-    const totalAllClicks = totalHdp + totalOmonUrganch + totalOmonGurlan + totalOmonShovot;
+    const totalAllClicks = totalHdp + totalHdpVodiy + totalOmonUrganch + totalOmonGurlan + totalOmonShovot;
 
     const statsMsg = `📊 <b>Tugmalar va Ariza Topshirish Statistikasi:</b>\n\n` +
       `👥 <b>Jami foydalanuvchilar:</b> ${usersCount} ta\n` +
       `👆 <b>Jami tugmalar bosilishi:</b> ${totalAllClicks} ta\n\n` +
       `🔹 <b>HDP LC:</b> ${totalHdp} ta ariza bosildi\n` +
+      `🔹 <b>HDP LC Vodiy:</b> ${totalHdpVodiy} ta ariza bosildi\n` +
       `🔹 <b>Omon School (Urganch filiali):</b> ${totalOmonUrganch} ta ariza bosildi\n` +
       `🔹 <b>Omon School (Gurlan filiali):</b> ${totalOmonGurlan} ta ariza bosildi\n` +
       `🔹 <b>Omon School (Shovot filiali):</b> ${totalOmonShovot} ta ariza bosildi`;
@@ -878,6 +913,15 @@ if (bot) {
     }
     adminState.set(ctx.from.id, "awaiting_hdp");
     ctx.reply("Yangi HDP LC silkasini yuboring (https://...):");
+    ctx.answerCbQuery().catch(() => {});
+  });
+
+  bot.action("edit_hdp_vodiy", async (ctx) => {
+    if (!checkIsAdmin(ctx.from.id)) {
+      return ctx.answerCbQuery("⚠️ Ruxsat berilmagan!", { show_alert: true }).catch(() => {});
+    }
+    adminState.set(ctx.from.id, "awaiting_hdp_vodiy");
+    ctx.reply("Yangi HDP LC Vodiy silkasini yuboring (https://...):");
     ctx.answerCbQuery().catch(() => {});
   });
 
@@ -1027,6 +1071,9 @@ if (bot) {
       } else if (state === "awaiting_hdp") {
         await setSetting('hdp_link', text);
         await ctx.reply("✅ HDP LC silkasi o'zgartirildi!");
+      } else if (state === "awaiting_hdp_vodiy") {
+        await setSetting('hdp_vodiy_link', text);
+        await ctx.reply("✅ HDP Vodiy silkasi o'zgartirildi!");
       } else if (state === "awaiting_omon_urganch") {
         await setSetting('omon_urganch_link', text);
         await ctx.reply("✅ Omon School Urganch filiali silkasi o'zgartirildi!");
@@ -1090,6 +1137,7 @@ app.get("/api/stats", async (req, res) => {
     }
     const usersSnap = await getDocs(collection(db, 'users'));
     let totalHdp = 0;
+    let totalHdpVodiy = 0;
     let totalOmonUrganch = 0;
     let totalOmonGurlan = 0;
     let totalOmonShovot = 0;
@@ -1097,6 +1145,7 @@ app.get("/api/stats", async (req, res) => {
     usersSnap.forEach((docSnap) => {
       const data = docSnap.data();
       totalHdp += data.hdp || 0;
+      totalHdpVodiy += data.hdp_vodiy || 0;
       totalOmonUrganch += data.omon_urganch || 0;
       totalOmonGurlan += data.omon_gurlan || 0;
       totalOmonShovot += data.omon_shovot || 0;
@@ -1105,6 +1154,7 @@ app.get("/api/stats", async (req, res) => {
     statsCache = {
       usersCount: usersSnap.size,
       totalHdp,
+      totalHdpVodiy,
       totalOmonUrganch,
       totalOmonGurlan,
       totalOmonShovot,
@@ -1122,6 +1172,7 @@ app.get("/api/settings", (req, res) => {
   res.json({
     channel_username: getSettingSync('channel_username', CHANNEL_USERNAME),
     hdp_link: getSettingSync('hdp_link'),
+    hdp_vodiy_link: getSettingSync('hdp_vodiy_link') || 'https://forms.gle/dVVii5PdmqqvQe8Y7',
     omon_link: omonLink,
     omon_urganch_link: getSettingSync('omon_urganch_link') || omonLink,
     omon_gurlan_link: getSettingSync('omon_gurlan_link') || omonLink,
@@ -1137,12 +1188,14 @@ app.get("/api/users", async (req, res) => {
     usersSnap.forEach((docSnap) => {
       const data = docSnap.data();
       const hdp = data.hdp || 0;
+      const hdp_vodiy = data.hdp_vodiy || 0;
       const omon = (data.omon_urganch || 0) + (data.omon_gurlan || 0) + (data.omon_shovot || 0);
       users.push({
         id: docSnap.id,
         hdp,
+        hdp_vodiy,
         omon,
-        total: hdp + omon,
+        total: hdp + hdp_vodiy + omon,
         updatedAt: data.updatedAt || null
       });
     });

@@ -21,6 +21,7 @@ import { UserActivity } from './types';
 interface Stats {
   usersCount: number;
   totalHdp: number;
+  totalHdpVodiy?: number;
   totalOmonUrganch: number;
   totalOmonGurlan: number;
   totalOmonShovot: number;
@@ -30,6 +31,7 @@ interface Stats {
 interface Settings {
   channel_username: string;
   hdp_link: string;
+  hdp_vodiy_link?: string;
   omon_urganch_link: string;
   omon_gurlan_link: string;
   omon_shovot_link: string;
@@ -51,6 +53,7 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>({
     channel_username: '',
     hdp_link: '',
+    hdp_vodiy_link: '',
     omon_urganch_link: '',
     omon_gurlan_link: '',
     omon_shovot_link: '',
@@ -236,6 +239,16 @@ export default function App() {
               <p className="text-xs text-indigo-600/70">Arizalar bosilishi</p>
             </div>
 
+            {/* HDP LC Vodiy */}
+            <div className="bg-white p-5 rounded-2xl border border-blue-100 bg-linear-to-b from-blue-50/30 to-white space-y-2">
+              <div className="flex items-center justify-between text-blue-600">
+                <span className="text-xs font-semibold uppercase tracking-wider">HDP LC Vodiy</span>
+                <Building2 className="w-4 h-4" />
+              </div>
+              <p className="text-3xl font-extrabold text-blue-900">{stats?.totalHdpVodiy ?? 0}</p>
+              <p className="text-xs text-blue-600/70">Arizalar bosilishi</p>
+            </div>
+
             {/* Omon Urganch */}
             <div className="bg-white p-5 rounded-2xl border border-emerald-100 bg-linear-to-b from-emerald-50/30 to-white space-y-2">
               <div className="flex items-center justify-between text-emerald-600">
@@ -347,6 +360,35 @@ export default function App() {
                 <button
                   onClick={() => handleSaveSetting('hdp_link', settings.hdp_link)}
                   disabled={savingKey === 'hdp_link'}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  Saqlash
+                </button>
+              </div>
+            </div>
+
+            {/* HDP LC Vodiy Link */}
+            <div className="p-4 rounded-xl border border-slate-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-blue-700 uppercase tracking-wider">HDP LC Vodiy Ariza Silkasini Sozlash</label>
+                {settings.hdp_vodiy_link && (
+                  <a href={settings.hdp_vodiy_link} target="_blank" rel="noreferrer" className="text-xs text-blue-600 flex items-center gap-1 hover:underline">
+                    Tekshirib ko'rish <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input 
+                  type="text"
+                  value={settings.hdp_vodiy_link}
+                  onChange={(e) => setSettings({ ...settings, hdp_vodiy_link: e.target.value })}
+                  placeholder="https://forms.gle/dVVii5PdmqqvQe8Y7"
+                  className="flex-1 bg-white border border-slate-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                />
+                <button
+                  onClick={() => handleSaveSetting('hdp_vodiy_link', settings.hdp_vodiy_link || '')}
+                  disabled={savingKey === 'hdp_vodiy_link'}
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold flex items-center gap-1.5 transition cursor-pointer"
                 >
                   <Save className="w-4 h-4" />

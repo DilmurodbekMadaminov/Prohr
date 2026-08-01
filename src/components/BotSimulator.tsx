@@ -15,7 +15,7 @@ export const BotSimulator: React.FC<BotSimulatorProps> = ({ settings }) => {
       text: 'Bot faollashtirildi. Ish joyini tanlang:',
       buttons: [
         { label: 'HDP LC', action: 'hdp' },
-        { label: 'Omon School', action: 'omon' },
+        { label: 'HDP LC Vodiy', action: 'hdp_vodiy' },
       ],
     },
   ]);
@@ -49,7 +49,7 @@ export const BotSimulator: React.FC<BotSimulatorProps> = ({ settings }) => {
               text: 'Ish joyini tanlang:',
               buttons: [
                 { label: 'HDP LC', action: 'hdp' },
-                { label: 'Omon School', action: 'omon' },
+                { label: 'HDP LC Vodiy', action: 'hdp_vodiy' },
               ],
             },
           ]);
@@ -68,6 +68,23 @@ export const BotSimulator: React.FC<BotSimulatorProps> = ({ settings }) => {
             text: 'HDP LC uchun ariza topshirish:',
             buttons: [
               { label: 'Ariza topshirish ↗', url: settings?.hdp_link || '#' },
+            ],
+          },
+        ]);
+      }, 400);
+    } else if (action === 'hdp_vodiy') {
+      setMessages((prev) => [
+        ...prev,
+        { sender: 'user', text: 'HDP LC Vodiy' },
+      ]);
+      setTimeout(() => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            sender: 'bot',
+            text: 'HDP LC Vodiy filiali uchun ariza topshirish:',
+            buttons: [
+              { label: 'Ariza topshirish ↗', url: settings?.hdp_vodiy_link || 'https://forms.gle/dVVii5PdmqqvQe8Y7' },
             ],
           },
         ]);
@@ -99,7 +116,7 @@ export const BotSimulator: React.FC<BotSimulatorProps> = ({ settings }) => {
           text: '✅ Obuna tasdiqlandi!\n\nIsh joyini tanlang:',
           buttons: [
             { label: 'HDP LC', action: 'hdp' },
-            { label: 'Omon School', action: 'omon' },
+            { label: 'HDP LC Vodiy', action: 'hdp_vodiy' },
           ],
         },
       ]);
@@ -185,10 +202,10 @@ export const BotSimulator: React.FC<BotSimulatorProps> = ({ settings }) => {
             HDP LC
           </button>
           <button
-            onClick={() => handleUserClick('omon')}
+            onClick={() => handleUserClick('hdp_vodiy')}
             className="py-2 px-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-white font-semibold text-xs transition active:scale-95 text-center"
           >
-            Omon School
+            HDP LC Vodiy
           </button>
         </div>
       </div>

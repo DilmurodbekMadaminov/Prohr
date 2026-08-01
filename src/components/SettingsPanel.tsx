@@ -10,6 +10,7 @@ interface SettingsPanelProps {
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }) => {
   const [channelUsername, setChannelUsername] = useState('');
   const [hdpLink, setHdpLink] = useState('');
+  const [hdpVodiyLink, setHdpVodiyLink] = useState('');
   const [omonLink, setOmonLink] = useState('');
   const [adminId, setAdminId] = useState('');
   const [saving, setSaving] = useState(false);
@@ -20,6 +21,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }
     if (settings) {
       setChannelUsername(settings.channel_username || '');
       setHdpLink(settings.hdp_link || '');
+      setHdpVodiyLink(settings.hdp_vodiy_link || '');
       setOmonLink(settings.omon_link || '');
       setAdminId(settings.admin_id || '');
     }
@@ -35,6 +37,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }
       await onSave({
         channel_username: channelUsername.trim(),
         hdp_link: hdpLink.trim(),
+        hdp_vodiy_link: hdpVodiyLink.trim(),
         omon_link: omonLink.trim(),
         admin_id: adminId.trim(),
       });
@@ -134,6 +137,22 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave }
             placeholder="https://forms.gle/..."
             className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition"
             required
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-slate-300 mb-1.5">
+            <span className="flex items-center gap-1.5">
+              <Link className="w-3.5 h-3.5 text-blue-400" />
+              HDP LC Vodiy Ariza Silkasi (Google Form / Link)
+            </span>
+          </label>
+          <input
+            type="url"
+            value={hdpVodiyLink}
+            onChange={(e) => setHdpVodiyLink(e.target.value)}
+            placeholder="https://forms.gle/dVVii5PdmqqvQe8Y7"
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition"
           />
         </div>
 

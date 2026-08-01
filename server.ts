@@ -823,6 +823,46 @@ if (bot) {
     return ctx.reply(`⚠️ <b>Siz administrator emassiz yoki Admin ID hali kiritilmagan!</b>\n\nSizning Telegram ID raqamingiz: <code>${ctx.from.id}</code>\n\n<b>Admin ruxsatini berish uchun:</b>\n1. Web Dashboard (Admin Panel) dagi <b>Admin Telegram ID</b> bo'limiga ushbu ID raqamingizni (<code>${ctx.from.id}</code>) kiriting va saqlang.\n2. Yoki .env fayliga <code>ADMIN_ID=${ctx.from.id}</code> deb yozing.\n\nSo'ngra qayta <b>/admin</b> buyrug'ini bosing.`, { parse_mode: "HTML" });
   });
 
+  async function sendStatsMessage(ctx: any) {
+    let usersSnap: any = { docs: [], size: 0, forEach: () => {} };
+    try {
+      usersSnap = await getDocs(collection(db, 'users'));
+    } catch (e) {}
+
+    let totalHdp = 0;
+    let totalOmonUrganch = 0;
+    let totalOmonGurlan = 0;
+    let totalOmonShovot = 0;
+    usersSnap.forEach((docSnap: any) => {
+      const data = docSnap.data();
+      totalHdp += data.hdp || 0;
+      totalOmonUrganch += data.omon_urganch || 0;
+      totalOmonGurlan += data.omon_gurlan || 0;
+      totalOmonShovot += data.omon_shovot || 0;
+    });
+
+    const usersCount = usersSnap.size || 0;
+    const totalAllClicks = totalHdp + totalOmonUrganch + totalOmonGurlan + totalOmonShovot;
+
+    const statsMsg = `📊 <b>Tugmalar va Ariza Topshirish Statistikasi:</b>\n\n` +
+      `👥 <b>Jami foydalanuvchilar:</b> ${usersCount} ta\n` +
+      `👆 <b>Jami tugmalar bosilishi:</b> ${totalAllClicks} ta\n\n` +
+      `🔹 <b>HDP LC:</b> ${totalHdp} ta ariza bosildi\n` +
+      `🔹 <b>Omon School (Urganch filiali):</b> ${totalOmonUrganch} ta ariza bosildi\n` +
+      `🔹 <b>Omon School (Gurlan filiali):</b> ${totalOmonGurlan} ta ariza bosildi\n` +
+      `🔹 <b>Omon School (Shovot filiali):</b> ${totalOmonShovot} ta ariza bosildi`;
+
+    return ctx.reply(statsMsg, { parse_mode: "HTML" });
+  }
+
+  bot.command("stats", async (ctx) => {
+    return await sendStatsMessage(ctx);
+  });
+
+  bot.hears(["/stats", "📊 Statistika", "Statistika", "statistika"], async (ctx) => {
+    return await sendStatsMessage(ctx);
+  });
+
   bot.action("edit_channel", async (ctx) => {
     if (!checkIsAdmin(ctx.from.id)) {
       return ctx.answerCbQuery("⚠️ Ruxsat berilmagan!", { show_alert: true }).catch(() => {});

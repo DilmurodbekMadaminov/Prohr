@@ -840,6 +840,46 @@ if (bot) {
     ctx.answerCbQuery().catch(() => {});
   });
 
+  bot.action("edit_broadcast", async (ctx) => {
+    const userId = ctx.from?.id;
+    if (!userId || !checkIsAdmin(userId)) {
+      return ctx.answerCbQuery("⚠️ Ruxsat berilmagan!", { show_alert: true }).catch(() => {});
+    }
+    adminState.set(userId, "awaiting_broadcast_msg");
+    await ctx.reply("📢 Barcha obunachilarga yubormoqchi bo'lgan xabar matnini kiriting:", {
+      reply_markup: {
+        inline_keyboard: [[Markup.button.callback("❌ Bekor qilish", "cancel_admin")]]
+      }
+    });
+    ctx.answerCbQuery().catch(() => {});
+  });
+
+  bot.command('broadcast', async (ctx) => {
+    const userId = ctx.from?.id;
+    if (!userId || !checkIsAdmin(userId)) return;
+
+    const text = ctx.message.text.replace('/broadcast', '').trim();
+    if (!text) {
+      return ctx.reply("⚠️ Xabar yozishni unutdingiz. Format: `/broadcast [xabar matni]`", { parse_mode: 'Markdown' });
+    }
+
+    await ctx.reply("⏳ Xabar tarqatish boshlandi...");
+    try {
+      const res = await broadcastToAllUsers(async (targetUserId) => {
+        try {
+          await bot!.telegram.sendMessage(targetUserId, text, { parse_mode: 'HTML' });
+        } catch (err) {
+          await bot!.telegram.sendMessage(targetUserId, text);
+        }
+      }, userId);
+      if (res.total === 0) {
+        await ctx.reply("❌ Foydalanuvchilar topilmadi.");
+      }
+    } catch (e: any) {
+      await ctx.reply(`❌ Xabar tarqatishda xatolik: ${e.message}`);
+    }
+  });
+
   bot.action("cancel_admin", async (ctx) => {
     if (!checkIsAdmin(ctx.from.id)) {
       return ctx.answerCbQuery("⚠️ Ruxsat berilmagan!").catch(() => {});
@@ -1054,9 +1094,12 @@ app.get("/api/broadcast/status", (req, res) => {
 
 app.post("/api/broadcast", async (req, res) => {
   try {
-    const { text } = req.body;
-    if (!text || typeof text !== 'string' || !text.trim()) {
-      return res.status(400).json({ error: "Xabar matni kiritilmagan" });
+    const { message, text, imageUrl, broadcastImage } = req.body;
+    const broadcastText = (message || text || "").trim();
+    const photoUrl = (imageUrl || broadcastImage || "").trim();
+
+    if (!broadcastText && !photoUrl) {
+      return res.status(400).json({ error: "Xabar matni yoki rasm kiritilmagan" });
     }
 
     if (!bot) {
@@ -1069,22 +1112,38 @@ app.post("/api/broadcast", async (req, res) => {
       });
     }
 
-    const messageText = text.trim();
-
     const result = await broadcastToAllUsers(async (targetUserId) => {
-      try {
-        await bot.telegram.sendMessage(targetUserId, messageText, { parse_mode: "HTML" });
-      } catch (err) {
-        // Fallback to plain text if HTML formatting fails
-        await bot.telegram.sendMessage(targetUserId, messageText);
+      if (photoUrl) {
+        try {
+          await bot.telegram.sendPhoto(targetUserId, photoUrl, {
+            caption: broadcastText || undefined,
+            parse_mode: 'HTML'
+          });
+        } catch (photoErr) {
+          if (broadcastText) {
+            await bot.telegram.sendMessage(targetUserId, broadcastText, { parse_mode: 'HTML' });
+          } else {
+            throw photoErr;
+          }
+        }
+      } else {
+        try {
+          await bot.telegram.sendMessage(targetUserId, broadcastText, { parse_mode: 'HTML' });
+        } catch (err) {
+          await bot.telegram.sendMessage(targetUserId, broadcastText);
+        }
       }
     });
 
     if (result.total === 0) {
       return res.json({
         ok: true,
-        message: "Hozircha botda foydalanuvchilar mavjud emas",
+        success: true,
+        sent: 0,
+        failed: 0,
+        total: 0,
         totalUsers: 0,
+        message: "Hozircha botda foydalanuvchilar mavjud emas",
         successCount: 0,
         failCount: 0
       });
@@ -1092,8 +1151,12 @@ app.post("/api/broadcast", async (req, res) => {
 
     res.json({
       ok: true,
-      message: `🚀 Xabar tarqatish boshlandi! Barcha ${result.total} ta foydalanuvchiga yuborilmoqda...`,
+      success: true,
+      sent: result.success,
+      failed: result.fail,
+      total: result.total,
       totalUsers: result.total,
+      message: `🚀 Xabar tarqatish boshlandi! Barcha ${result.total} ta foydalanuvchiga yuborilmoqda...`,
       successCount: 0,
       failCount: 0
     });

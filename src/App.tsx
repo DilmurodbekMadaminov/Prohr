@@ -87,20 +87,22 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleSendBroadcast = async (text: string) => {
+  const handleSendBroadcast = async (text: string, imageUrl?: string) => {
     const res = await fetch('/api/broadcast', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
+      body: JSON.stringify({ message: text, text, imageUrl, broadcastImage: imageUrl })
     });
     const data = await res.json();
-    if (!res.ok || !data.ok) {
+    if (!res.ok || (!data.ok && !data.success)) {
       throw new Error(data.error || "Xabar yuborishda xatolik yuz berdi");
     }
     return {
       success: true,
       message: data.message,
-      totalUsers: data.totalUsers ?? 0
+      totalUsers: data.totalUsers ?? data.total ?? 0,
+      sent: data.sent ?? 0,
+      failed: data.failed ?? 0
     };
   };
 

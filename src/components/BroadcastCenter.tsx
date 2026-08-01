@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Send, Megaphone, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { Send, Megaphone, AlertCircle, CheckCircle, Loader2, Image as ImageIcon } from 'lucide-react';
 
 interface BroadcastCenterProps {
   totalUsers: number;
-  onSendBroadcast: (text: string) => Promise<{ success: boolean; message: string; totalUsers: number }>;
+  onSendBroadcast: (text: string, imageUrl?: string) => Promise<{ success: boolean; message: string; totalUsers: number; sent?: number; failed?: number }>;
 }
 
 interface BroadcastStatus {
@@ -17,6 +17,7 @@ interface BroadcastStatus {
 
 export const BroadcastCenter: React.FC<BroadcastCenterProps> = ({ totalUsers, onSendBroadcast }) => {
   const [text, setText] = useState('');
+  const [broadcastImage, setBroadcastImage] = useState('');
   const [sending, setSending] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [broadcastProgress, setBroadcastProgress] = useState<BroadcastStatus | null>(null);
@@ -51,7 +52,7 @@ export const BroadcastCenter: React.FC<BroadcastCenterProps> = ({ totalUsers, on
 
   const handleBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!text.trim()) return;
+    if (!text.trim() && !broadcastImage.trim()) return;
 
     if (broadcastProgress?.inProgress) {
       alert("Hozirda xabar tarqatish davom etmoqda. Iltimos, u tugashini kuting!");
@@ -70,9 +71,10 @@ export const BroadcastCenter: React.FC<BroadcastCenterProps> = ({ totalUsers, on
     setStatusMsg(null);
 
     try {
-      const res = await onSendBroadcast(text);
+      const res = await onSendBroadcast(text, broadcastImage.trim() || undefined);
       setStatusMsg({ type: 'success', text: res.message });
       setText('');
+      setBroadcastImage('');
     } catch (err: any) {
       setStatusMsg({ type: 'error', text: err.message || "Xabar tarqatishda xatolik yuz berdi" });
     } finally {
@@ -89,9 +91,11 @@ export const BroadcastCenter: React.FC<BroadcastCenterProps> = ({ totalUsers, on
           <Megaphone className="w-5 h-5" />
         </div>
         <div>
-          <h2 className="text-base font-semibold text-white">Xabar Tarqatish (Broadcast)</h2>
+          <h2 className="text-base font-semibold text-white flex items-center gap-2">
+            Foydalanuvchilarga Xabar Tarqatish
+          </h2>
           <p className="text-xs text-slate-400">
-            Botning barcha {totalUsers} ta foydalanuvchisiga ommaviy xabar yuborish
+            Botning barcha {totalUsers} ta foydalanuvchisiga ommaviy xabar yoki rasm yuborish
           </p>
         </div>
       </div>
@@ -141,21 +145,49 @@ export const BroadcastCenter: React.FC<BroadcastCenterProps> = ({ totalUsers, on
           </div>
         )}
 
+        {/* Image URL Input */}
+        <div>
+          <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
+            <ImageIcon className="w-3.5 h-3.5 text-indigo-400" />
+            Rasm URL (ixtiyoriy)
+          </label>
+          <input
+            type="url"
+            value={broadcastImage}
+            onChange={(e) => setBroadcastImage(e.target.value)}
+            disabled={sending || isBroadcasting}
+            placeholder="https://example.com/image.jpg"
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition disabled:opacity-50 font-mono text-xs"
+          />
+          {broadcastImage.trim() && (
+            <div className="mt-2 relative w-32 h-20 rounded-lg overflow-hidden border border-slate-800 bg-slate-950">
+              <img
+                src={broadcastImage}
+                alt="Preview"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Text Area */}
         <div>
           <label className="block text-xs font-medium text-slate-300 mb-1.5">
-            Xabar matni:
+            Xabar matni (HTML formatida ham yozish mumkin):
           </label>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             disabled={sending || isBroadcasting}
-            rows={4}
+            rows={5}
             placeholder="Assalomu alaykum! Yangi bo'sh ish o'rinlari haqida e'lon..."
             className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition resize-none disabled:opacity-50"
-            required
           />
           <div className="flex justify-between text-[11px] text-slate-500 mt-1">
-            <span>Matn tahriri va emojilardan foydalanishingiz mumkin</span>
+            <span>Matn tahriri va HTML teglari (<b>...</b>, <i>...</i>, <a>...</a>) hamda emojilardan foydalanishingiz mumkin</span>
             <span>{text.length} belgi</span>
           </div>
         </div>
@@ -166,8 +198,8 @@ export const BroadcastCenter: React.FC<BroadcastCenterProps> = ({ totalUsers, on
           </span>
           <button
             type="submit"
-            disabled={sending || isBroadcasting || !text.trim()}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-sm disabled:opacity-50 cursor-pointer"
+            disabled={sending || isBroadcasting || (!text.trim() && !broadcastImage.trim())}
+            className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-sm disabled:opacity-50 cursor-pointer"
           >
             {sending || isBroadcasting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -179,7 +211,7 @@ export const BroadcastCenter: React.FC<BroadcastCenterProps> = ({ totalUsers, on
                 ? `Yuborilmoqda (${broadcastProgress?.percentage || 0}%)`
                 : sending
                 ? "Yuborilmoqda..."
-                : "Xabar Yuborish"}
+                : "Xabarni Barchaga Yuborish"}
             </span>
           </button>
         </div>

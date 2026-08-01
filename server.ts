@@ -228,6 +228,32 @@ let activeBroadcast = {
 };
 
 let globalPauseUntil = 0;
+const rateLimitTimestamps: number[] = [];
+const MAX_PER_SECOND = 28; // Maximum safe rate near Telegram's 30 msgs/sec global cap
+
+async function waitForRateLimitToken(): Promise<void> {
+  while (true) {
+    const now = Date.now();
+    if (globalPauseUntil > now) {
+      await new Promise((r) => setTimeout(r, globalPauseUntil - now + 50));
+      continue;
+    }
+
+    // Clean up timestamps older than 1 second (1000 ms)
+    while (rateLimitTimestamps.length > 0 && rateLimitTimestamps[0] <= now - 1000) {
+      rateLimitTimestamps.shift();
+    }
+
+    if (rateLimitTimestamps.length < MAX_PER_SECOND) {
+      rateLimitTimestamps.push(now);
+      return;
+    }
+
+    const oldest = rateLimitTimestamps[0];
+    const waitMs = Math.max(10, 1000 - (now - oldest) + 5);
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+}
 
 async function sendTelegramMessageSafely(
   sendFn: (user_id: number) => Promise<any>,
@@ -236,7 +262,7 @@ async function sendTelegramMessageSafely(
   for (let attempt = 0; attempt < 5; attempt++) {
     const now = Date.now();
     if (globalPauseUntil > now) {
-      await new Promise((r) => setTimeout(r, globalPauseUntil - now));
+      await new Promise((r) => setTimeout(r, globalPauseUntil - now + 50));
     }
 
     try {
@@ -277,7 +303,7 @@ async function sendTelegramMessageSafely(
       }
 
       // Transient error - brief pause before retry
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((r) => setTimeout(r, 400));
     }
   }
   return false;
@@ -355,23 +381,34 @@ async function broadcastToAllUsers(
     notifyAdminId: adminIdToNotify || null
   };
 
-  // Dispatch background worker (non-blocking for HTTP/Telegraf)
-  const DELAY_MS = 40; // 25 msgs/sec safe pace
-
+  // Dispatch parallel background workers with sliding window rate limiting
   (async () => {
-    for (let i = 0; i < userIds.length; i++) {
-      const targetUserId = userIds[i];
-      const sent = await sendTelegramMessageSafely(sendFn, targetUserId);
-      if (sent) {
-        activeBroadcast.success++;
-      } else {
-        activeBroadcast.fail++;
-      }
+    const MAX_CONCURRENCY = 12;
+    let nextIndex = 0;
 
-      if (i < userIds.length - 1) {
-        await new Promise((r) => setTimeout(r, DELAY_MS));
+    const worker = async () => {
+      while (true) {
+        const i = nextIndex++;
+        if (i >= userIds.length) break;
+
+        const targetUserId = userIds[i];
+        await waitForRateLimitToken();
+        const sent = await sendTelegramMessageSafely(sendFn, targetUserId);
+        if (sent) {
+          activeBroadcast.success++;
+        } else {
+          activeBroadcast.fail++;
+        }
       }
+    };
+
+    const workerPromises = [];
+    const poolSize = Math.min(MAX_CONCURRENCY, userIds.length);
+    for (let c = 0; c < poolSize; c++) {
+      workerPromises.push(worker());
     }
+
+    await Promise.all(workerPromises);
 
     activeBroadcast.inProgress = false;
     activeBroadcast.finishedAt = new Date().toISOString();

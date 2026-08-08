@@ -573,6 +573,88 @@ if (bot) {
     return next();
   });
 
+  // Priority middleware: Intercept admin state inputs (broadcast, links, channel) BEFORE any bot.hears/bot.command
+  bot.use(async (ctx, next) => {
+    if (ctx.from && ctx.from.id && ctx.message) {
+      const userId = ctx.from.id;
+      if (checkIsAdmin(userId) && adminState.has(userId)) {
+        const msg = ctx.message as any;
+        const text = msg.text || '';
+
+        // Allow admin to cancel if they type /cancel or Bekor qilish
+        if (text === '/cancel' || text === '❌ Bekor qilish' || text === 'Bekor qilish') {
+          adminState.delete(userId);
+          await ctx.reply("❌ Amal bekor qilindi.");
+          await sendAdminPanel(ctx);
+          return;
+        }
+
+        const state = adminState.get(userId);
+
+        if (state === "awaiting_broadcast" || state === "awaiting_broadcast_msg") {
+          adminState.delete(userId);
+          if (activeBroadcast.inProgress) {
+            await ctx.reply(`⚠️ Hozirda xabar tarqatish jarayoni ketmoqda (${activeBroadcast.success + activeBroadcast.fail}/${activeBroadcast.total}). Iltimos, tugashini kuting.`);
+            return;
+          }
+
+          await ctx.reply("⏳ Reklama / Xabar barcha foydalanuvchilarga tarqatilmoqda, kuting...");
+
+          try {
+            const res = await broadcastToAllUsers(async (targetUserId) => {
+              await ctx.copyMessage(targetUserId);
+            }, userId);
+            if (res.total === 0) {
+              await ctx.reply("⚠️ Botda foydalanuvchilar topilmadi.");
+            }
+          } catch (e: any) {
+            await ctx.reply(`❌ Xabar tarqatishda xatolik yuz berdi: ${e.message}`);
+          }
+          return;
+        }
+
+        if (!text) {
+          await ctx.reply("Iltimos, matn yoki havola (link) yuboring.");
+          return;
+        }
+
+        if (state === "awaiting_channel") {
+          subCache.clear();
+          let cleanedChannel = text.trim();
+          if (!cleanedChannel.startsWith('http')) {
+             if (cleanedChannel.startsWith('@')) {
+                 cleanedChannel = `https://t.me/${cleanedChannel.replace('@', '')}`;
+             } else if (!cleanedChannel.startsWith('-')) {
+                 cleanedChannel = `https://t.me/${cleanedChannel}`;
+             }
+          }
+          await setSetting('channel_username', cleanedChannel);
+          await ctx.reply(`✅ Kanal muvaffaqiyatli o'zgartirildi!\nYangi havola: ${cleanedChannel}`);
+        } else if (state === "awaiting_hdp") {
+          await setSetting('hdp_link', text.trim());
+          await ctx.reply("✅ HDP LC silkasi o'zgartirildi!");
+        } else if (state === "awaiting_hdp_vodiy") {
+          await setSetting('hdp_vodiy_link', text.trim());
+          await ctx.reply("✅ HDP LC Vodiy silkasi o'zgartirildi!");
+        } else if (state === "awaiting_omon_urganch") {
+          await setSetting('omon_urganch_link', text.trim());
+          await ctx.reply("✅ Omon School Urganch filiali silkasi o'zgartirildi!");
+        } else if (state === "awaiting_omon_gurlan") {
+          await setSetting('omon_gurlan_link', text.trim());
+          await ctx.reply("✅ Omon School Gurlan filiali silkasi o'zgartirildi!");
+        } else if (state === "awaiting_omon_shovot") {
+          await setSetting('omon_shovot_link', text.trim());
+          await ctx.reply("✅ Omon School Shovot filiali silkasi o'zgartirildi!");
+        }
+
+        adminState.delete(userId);
+        await sendAdminPanel(ctx);
+        return;
+      }
+    }
+    return next();
+  });
+
   bot.start(async (ctx) => {
     const userId = ctx.from.id;
 
@@ -613,7 +695,7 @@ if (bot) {
     return ctx.reply("✅ Obuna tasdiqlandi! Ish joyini tanlang:", mainMenuKeyboard());
   });
 
-  bot.hears([/vodiy/i, "HDP LC Vodiy", "HDP LC vodiy", "HDP Vodiy", "HDP vodiy", "HDP Vodiy filiali", "HDP Vodiy filial"], async (ctx) => {
+  bot.hears([/^hdp lc vodiy$/i, /^hdp vodiy$/i, "HDP LC Vodiy", "HDP LC vodiy", "HDP Vodiy", "HDP vodiy", "HDP Vodiy filiali", "HDP Vodiy filial"], async (ctx) => {
     try {
       const subscribed = await checkSubscription(ctx);
       if (!subscribed) {
@@ -659,7 +741,7 @@ if (bot) {
     }
   });
 
-  bot.hears([/urganch/i, "Omon school Urganch filiali", "Omon school Urganch filial", "Urganch filiali"], async (ctx) => {
+  bot.hears([/^omon school urganch filiali$/i, /^urganch filiali$/i, /^urganch$/i, "Omon school Urganch filiali", "Omon school Urganch filial", "Urganch filiali"], async (ctx) => {
     try {
       const subscribed = await checkSubscription(ctx);
       if (!subscribed) {
@@ -682,7 +764,7 @@ if (bot) {
     }
   });
 
-  bot.hears([/gurlan/i, "Omon school Gurlan filiali", "Omon school Gurlan filial", "Gurlan filiali", "Gurlan filial", "Gurlan"], async (ctx) => {
+  bot.hears([/^omon school gurlan filiali$/i, /^gurlan filiali$/i, /^gurlan$/i, "Omon school Gurlan filiali", "Omon school Gurlan filial", "Gurlan filiali", "Gurlan filial", "Gurlan"], async (ctx) => {
     try {
       const subscribed = await checkSubscription(ctx);
       if (!subscribed) {
@@ -705,7 +787,7 @@ if (bot) {
     }
   });
 
-  bot.hears([/shovot/i, "Omon school Shovot filiali", "Omon school Shovot filial", "Shovot filiali"], async (ctx) => {
+  bot.hears([/^omon school shovot filiali$/i, /^shovot filiali$/i, /^shovot$/i, "Omon school Shovot filiali", "Omon school Shovot filial", "Shovot filiali"], async (ctx) => {
     try {
       const subscribed = await checkSubscription(ctx);
       if (!subscribed) {
@@ -1010,7 +1092,7 @@ if (bot) {
     ctx.answerCbQuery("Bekor qilindi").catch(() => {});
   });
 
-  bot.hears([/omon/i, "Omon school", "Omon School", "Omon"], async (ctx) => {
+  bot.hears([/^omon school$/i, /^omon$/i, "Omon school", "Omon School", "Omon"], async (ctx) => {
     try {
       const subscribed = await checkSubscription(ctx);
       if (!subscribed) {
@@ -1020,75 +1102,6 @@ if (bot) {
     } catch (err) {
       return ctx.reply("Ish joyini tanlang:", mainMenuKeyboard());
     }
-  });
-
-  bot.on("message", async (ctx, next) => {
-    const userId = ctx.from.id;
-    if (checkIsAdmin(userId) && adminState.has(userId)) {
-      const state = adminState.get(userId);
-
-      if (state === "awaiting_broadcast" || state === "awaiting_broadcast_msg") {
-        adminState.delete(userId);
-        if (activeBroadcast.inProgress) {
-          ctx.reply(`⚠️ Hozirda xabar tarqatish jarayoni ketmoqda (${activeBroadcast.success + activeBroadcast.fail}/${activeBroadcast.total}). Iltimos, tugashini kuting.`);
-          return;
-        }
-
-        ctx.reply("⏳ Reklama / Xabar barcha foydalanuvchilarga tarqatilmoqda, kuting...");
-
-        try {
-          const res = await broadcastToAllUsers(async (targetUserId) => {
-            await ctx.copyMessage(targetUserId);
-          }, userId);
-          if (res.total === 0) {
-            await ctx.reply("⚠️ Botda foydalanuvchilar topilmadi.");
-          }
-        } catch (e: any) {
-          await ctx.reply(`❌ Xabar tarqatishda xatolik yuz berdi: ${e.message}`);
-        }
-        return;
-      }
-
-      const msg = ctx.message as any;
-      if (!msg.text) {
-        ctx.reply("Iltimos, faqat matn yuboring.");
-        return;
-      }
-      const text = msg.text;
-
-      if (state === "awaiting_channel") {
-        subCache.clear();
-        let cleanedChannel = text.trim();
-        if (!cleanedChannel.startsWith('http')) {
-           if (cleanedChannel.startsWith('@')) {
-               cleanedChannel = `https://t.me/${cleanedChannel.replace('@', '')}`;
-           } else if (!cleanedChannel.startsWith('-')) {
-               cleanedChannel = `https://t.me/${cleanedChannel}`;
-           }
-        }
-        await setSetting('channel_username', cleanedChannel);
-        await ctx.reply(`✅ Kanal muvaffaqiyatli o'zgartirildi!\nYangi havola: ${cleanedChannel}`);
-      } else if (state === "awaiting_hdp") {
-        await setSetting('hdp_link', text);
-        await ctx.reply("✅ HDP LC silkasi o'zgartirildi!");
-      } else if (state === "awaiting_hdp_vodiy") {
-        await setSetting('hdp_vodiy_link', text);
-        await ctx.reply("✅ HDP Vodiy silkasi o'zgartirildi!");
-      } else if (state === "awaiting_omon_urganch") {
-        await setSetting('omon_urganch_link', text);
-        await ctx.reply("✅ Omon School Urganch filiali silkasi o'zgartirildi!");
-      } else if (state === "awaiting_omon_gurlan") {
-        await setSetting('omon_gurlan_link', text);
-        await ctx.reply("✅ Omon School Gurlan filiali silkasi o'zgartirildi!");
-      } else if (state === "awaiting_omon_shovot") {
-        await setSetting('omon_shovot_link', text);
-        await ctx.reply("✅ Omon School Shovot filiali silkasi o'zgartirildi!");
-      }
-      adminState.delete(userId);
-      await sendAdminPanel(ctx);
-      return;
-    }
-    return next();
   });
 
   // Catch-all handler for any unhandled text messages so user ALWAYS receives a response
